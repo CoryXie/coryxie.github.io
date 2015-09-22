@@ -71,7 +71,7 @@ kramdown:
 
 prose:
   rooturl: '_posts'
-  siteurl: 'http://farmercoder.org/'
+  siteurl: 'http://farmercoder.org'
   relativeLinks: 'http://farmercoder.org/links.jsonp'
   media: 'images'
   metadata:
