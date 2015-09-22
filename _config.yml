@@ -1,9 +1,9 @@
 title:            Farmer Coder
 description:      "Coding is fun"
 logo:             logo.png
-disqus_shortname: CoryXie
+disqus_shortname: FarmerCoder
 share:            true
-dropcap:			true
+dropcap:		  true
 # Change url to your domain. Leave localhost server or blank when working locally.
 # or use the hint from http://jekyllrb.com/docs/github-pages/ to keep this the same 
 # whether working locally or remotely. Start Jekyll with: jekyll serve --baseurl ''
