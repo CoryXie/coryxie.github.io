@@ -12,15 +12,13 @@ url:        	  http://www.farmercoder.org
 # Owner/author information
 owner:
   name:           CoryXie
-  avatar:         CoryXie.jpg
+  avatar:         logo.png
   email:          cory.xie@gmail.com
   # Use the coder's toolbox at http://coderstoolbox.net/string/#!encoding=xml&action=encode&charset=us_ascii to encode your description into XML string
-  description:    Awesome Dude, Awesome Life
+  description:    A farmer coder who loves to work on Operating System Kernels.
   # Social networking links used in footer. Update and remove as you like.
-  twitter:        CoryXie
   facebook:       CoryXie
-  github:         CoryXie      
-  instagram:      CoryXie
+  github:         CoryXie
   # For Google Authorship https://plus.google.com/authorship
   google_plus:    https://plus.google.com/u/0/111608687664119955459
 
