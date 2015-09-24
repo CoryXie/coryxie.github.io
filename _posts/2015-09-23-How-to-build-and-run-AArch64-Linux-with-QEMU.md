@@ -20,16 +20,23 @@ I am going to start a series of blog entries recording my experiences on trying 
 ## 1. Build qemu.git
 
 > sudo apt-get build-dep qemu
+
 > git clone git://git.qemu.org/qemu.git qemu.git
+
 > cd qemu.git
-> ./configure 
+
+> ./configure
+
 > make -j
+
 > sudo make install
 
 ## 2. Build buildroot.git
 
 > git clone git://git.buildroot.net/buildroot buildroot.git
+
 > cd buildroot.git
+
 > make menuconfig
 
 There are lots of configuration options to choose from but the following are what I use:
