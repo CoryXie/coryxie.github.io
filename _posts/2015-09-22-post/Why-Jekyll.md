@@ -30,3 +30,4 @@ If that still doesn’t convince you to at least give it a try, I’d like to en
 Enjoy!
 
 <img src="{{ site.url }}/images/logo.png" alt="logo">
+{% include img.html name='logo.png' %}
