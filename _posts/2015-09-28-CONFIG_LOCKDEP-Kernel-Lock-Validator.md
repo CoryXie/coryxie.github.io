@@ -73,7 +73,7 @@ The before and after lists can be implemented using data structures such as a bu
 
 As shown in FIG. 2, the kernel lock validator 130 can comprise a control module 205, a lock status module 210, a rules module 215 and a hash table 220. The control module 205 can be configured to manage and provide the functionality of the kernel lock validator 130. The control module 205, as with the other noted modules, can be implemented as a software routine (applet, program, etc.), a hardware component (ASIC, FPGA, etc.) or a combinations thereof.
 
-<img src="{{ site.url }}/images/2015-09-28-1/FIG2.png" alt="the kernel lock validator">
+<img src="{{ site.url }}/images/2015-09-28-1/US8145903-FIG2.png" alt="the kernel lock validator">
 
 The control module 205 can also be configured to track lock-types as opposed to tracking each individual instance of the lock-type. The lock-type is registered when it used for the first time after bootup and all subsequent uses of the registered lock-type will be attached to this lock-type. Accordingly, each lock type is assigned a specific key based on the registration of the lock-type. The control module 205 can be configured to create a static variable (e.g., (_key)) for statically declared locks and uses the address of the statically declared lock as the key. The control module 205 can maintain the information regarding the lock types and associated keys in the lock status module 210.
 
@@ -87,11 +87,11 @@ As there are multiple rules, the ordering of the rules as they are tested is an 
 
 FIG. 3 depicts a block diagram of a first and second data structure 305, 310, respectively for implementing storing the before list and the after list. As shown in FIG. 3, first data structure 305 and second data structure 310 can be implemented as a series of memory spaces 315. The size of the memory space 315 can be dependent on the type of processor. More particularly, a 32-bit processor may indicate that the size of the memory space 315 is a 32-bit word as an example. In other embodiments, a user can alter the size of the memory space 315.
 
-<img src="{{ site.url }}/images/2015-09-28-1/FIG3.png" alt="the before list and after list">
+<img src="{{ site.url }}/images/2015-09-28-1/US8145903-FIG3.png" alt="the before list and after list">
 
 As shown in FIG. 4, the control module 205 can receive notification of an acquisition of a lock, L, by a process, thread, etc., in step 405. Alternatively, the control module 205 can also receive notification that a lock is changing state, e.g., being released.
 
-<img src="{{ site.url }}/images/2015-09-28-1/FIG4.png" alt="the control module">
+<img src="{{ site.url }}/images/2015-09-28-1/US8145903-FIG4.png" alt="the control module">
 
 In step 410, the control module 205 can be configured to generate a 64-bit hash value of the sequence with the lock, L, as a temporary last entry into the data structure that holds the list of currently held locks. The hash value can be regarded as a ‘frontside cache’ so as to avoid testing of all held locks against the set of rules. The control module 205 can be configured to keep a ‘rolling’ 64-bit hash of the current ‘stack of locks’, which is updated when a lock in the stack is released or when a new lock is acquired. The update of the update 64-bit hash does not need to be recalculate the full has of all held locks because the hash generation step is reversible.
 
