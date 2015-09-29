@@ -180,7 +180,177 @@ The `CONFIG_LOCKDEP` configuration is defined in `lib/Kconfig.debug` along with 
 
 This means that once `CONFIG_DEBUG_LOCK_ALLOC` is selected, `CONFIG_LOCKDEP` configuration will also be selected. The following subsections will try to describe the implementation details for `CONFIG_LOCKDEP`.
 
-### The basic object - `struct lock_class` ###
+### The glue structure - struct lockdep_map ###
+
+The `struct lockdep_map` is the glue structure to link any kind of lockdep enabled locking mechanism with the `struct lock_class` structure wihch will be described in next subsection. Each such locking structure would have a `struct lockdep_map` embedded into its structure definition. For example, the `struct raw_spinlock` as defined in `<include/linux/spinlock_types.h>` takes a `struct lockdep_map dep_map` field as below.
+
+```c
+
+	typedef struct raw_spinlock {
+		arch_spinlock_t raw_lock;
+	#ifdef CONFIG_GENERIC_LOCKBREAK
+		unsigned int break_lock;
+	#endif
+	#ifdef CONFIG_DEBUG_SPINLOCK
+		unsigned int magic, owner_cpu;
+		void *owner;
+	#endif
+	#ifdef CONFIG_DEBUG_LOCK_ALLOC
+		struct lockdep_map dep_map;
+	#endif
+	} raw_spinlock_t;
+
+```
+
+Note that the `CONFIG_DEBUG_LOCK_ALLOC` is used to wrap the inclusion of `struct lockdep_map dep_map`. The following code snippet is extracted from `<include/linux/lockdep.h>`.
+
+```c
+
+	#define MAX_LOCKDEP_SUBCLASSES		8UL
+	
+	/*
+	 * NR_LOCKDEP_CACHING_CLASSES ... Number of classes
+	 * cached in the instance of lockdep_map
+	 *
+	 * Currently main class (subclass == 0) and signle depth subclass
+	 * are cached in lockdep_map. This optimization is mainly targeting
+	 * on rq->lock. double_rq_lock() acquires this highly competitive with
+	 * single depth.
+	 */
+	#define NR_LOCKDEP_CACHING_CLASSES	2
+
+	/*
+	 * Lock-classes are keyed via unique addresses, by embedding the
+	 * lockclass-key into the kernel (or module) .data section. (For
+	 * static locks we use the lock address itself as the key.)
+	 */
+	struct lockdep_subclass_key {
+		char __one_byte;
+	} __attribute__ ((__packed__));
+	
+	struct lock_class_key {
+		struct lockdep_subclass_key	subkeys[MAX_LOCKDEP_SUBCLASSES];
+	};
+
+	/*
+	 * Map the lock object (the lock instance) to the lock-class object.
+	 * This is embedded into specific lock instances:
+	 */
+	struct lockdep_map {
+		struct lock_class_key		*key;
+		struct lock_class		*class_cache[NR_LOCKDEP_CACHING_CLASSES];
+		const char			*name;
+	#ifdef CONFIG_LOCK_STAT
+		int				cpu;
+		unsigned long			ip;
+	#endif
+	};
+
+```
+
+Every lock in the system (including rwlocks and mutexes) is assigned a specific key. For locks which are declared statically, the address of the lock is used as the key. This is not initially explict for spinlocks as the static initializer for spinlocks look like the following:
+
+```c
+
+	#define SPINLOCK_MAGIC		0xdead4ead
+	
+	#define SPINLOCK_OWNER_INIT	((void *)-1L)
+	
+	#ifdef CONFIG_DEBUG_LOCK_ALLOC
+	# define SPIN_DEP_MAP_INIT(lockname)	.dep_map = { .name = #lockname }
+	#else
+	# define SPIN_DEP_MAP_INIT(lockname)
+	#endif
+	
+	#ifdef CONFIG_DEBUG_SPINLOCK
+	# define SPIN_DEBUG_INIT(lockname)		\
+		.magic = SPINLOCK_MAGIC,		\
+		.owner_cpu = -1,			\
+		.owner = SPINLOCK_OWNER_INIT,
+	#else
+	# define SPIN_DEBUG_INIT(lockname)
+	#endif
+	
+	#define __RAW_SPIN_LOCK_INITIALIZER(lockname)	\
+		{					\
+		.raw_lock = __ARCH_SPIN_LOCK_UNLOCKED,	\
+		SPIN_DEBUG_INIT(lockname)		\
+		SPIN_DEP_MAP_INIT(lockname) }
+	
+	#define __RAW_SPIN_LOCK_UNLOCKED(lockname)	\
+		(raw_spinlock_t) __RAW_SPIN_LOCK_INITIALIZER(lockname)
+	
+	#define DEFINE_RAW_SPINLOCK(x)	raw_spinlock_t x = __RAW_SPIN_LOCK_UNLOCKED(x)
+
+```
+
+From the above code we can see that the `SPIN_DEP_MAP_INIT(lockname)` is only setting the `dep_map.name` field to the name of the lock. The `dep_map.key` will only be initialized to be the address of the lock when the corresponding lock class is registered, for which we will see the detailed code sequence later, but here we can just have a small snippet of the function `look_up_lock_class()` as defined in `kernel/locking/lockdep.c`.
+
+```c
+
+	/*
+	 * Register a lock's class in the hash-table, if the class is not present
+	 * yet. Otherwise we look it up. We cache the result in the lock object
+	 * itself, so actual lookup of the hash should be once per lock object.
+	 */
+	static inline struct lock_class *
+	look_up_lock_class(struct lockdep_map *lock, unsigned int subclass) {
+	...
+		/*
+		 * Static locks do not have their class-keys yet - for them the key
+		 * is the lock object itself:
+		 */
+		if (unlikely(!lock->key))
+			lock->key = (void *)lock;
+	...
+	}
+
+```
+
+Locks which are allocated dynamically (as most locks embedded within structures are) cannot be tracked that way, however; there may be vast numbers of addresses involved, and, in any case, all locks associated with a specific structure field should be mapped to a single key. This is done by recognizing that these locks are initialized at run time, so, for example, raw_spin_lock_init() is redefined as:
+
+```c
+
+	#ifdef CONFIG_DEBUG_SPINLOCK
+	  extern void __raw_spin_lock_init(raw_spinlock_t *lock, const char *name,
+					   struct lock_class_key *key);
+	# define raw_spin_lock_init(lock)				\
+	do {								\
+		static struct lock_class_key __key;			\
+									\
+		__raw_spin_lock_init((lock), #lock, &__key);		\
+	} while (0)
+	
+	#else
+	# define raw_spin_lock_init(lock)				\
+		do { *(lock) = __RAW_SPIN_LOCK_UNLOCKED(lock); } while (0)
+	#endif
+
+```
+
+Thus, for each lock initialization, this code creates a static variable (__key) and uses its address as the key identifying the type of the lock. Since any particular type of lock tends to be initialized in a single place, this trick associates the same key with every lock of the same type. The `dep_map` will be further initialized in `__raw_spin_lock_init()` as below:
+
+```c
+
+	void __raw_spin_lock_init(raw_spinlock_t *lock, const char *name,
+				  struct lock_class_key *key)
+	{
+	#ifdef CONFIG_DEBUG_LOCK_ALLOC
+		/*
+		 * Make sure we are not reinitializing a held lock:
+		 */
+		debug_check_no_locks_freed((void *)lock, sizeof(*lock));
+		lockdep_init_map(&lock->dep_map, name, key, 0);
+	#endif
+		lock->raw_lock = (arch_spinlock_t)__ARCH_SPIN_LOCK_UNLOCKED;
+		lock->magic = SPINLOCK_MAGIC;
+		lock->owner = SPINLOCK_OWNER_INIT;
+		lock->owner_cpu = -1;
+	}
+
+```
+
+### The lock type object - struct lock_class ###
 
 A lock-type is defined as a `struct lock_class` structure in Linux Kernel, which is the basic object the validator operates upon.
 
@@ -312,77 +482,103 @@ The bit position indicates STATE, STATE-read, for each of the states listed abov
 
 Unlike an lock instantiation, the lock-class itself never goes away: when a lock-class is used for the first time after bootup it gets registered, and all subsequent uses of that lock-class will be attached to this lock-class.
 
-### The glue structure - `struct lockdep_map` ###
+#### The lock() and unlock() operations ####
 
-The `struct lockdep_map` is the glue structure to link any kind of lockdep enabled locking mechanism. Each such locking structure would have a `struct lockdep_map` embedded into the structure definition. For example, the `struct raw_spinlock` as defined in `<include/linux/spinlock_types.h>` takes a `struct lockdep_map dep_map` field as below.
+Take the `__raw_spin_lock()` as an example, when `CONFIG_DEBUG_LOCK_ALLOC` is enabled, after disabling preemption, it calls a generic `spin_acquire()` with the `dep_map` as its 1st parameter.
 
 ```c
 
-	typedef struct raw_spinlock {
-		arch_spinlock_t raw_lock;
-	#ifdef CONFIG_GENERIC_LOCKBREAK
-		unsigned int break_lock;
-	#endif
-	#ifdef CONFIG_DEBUG_SPINLOCK
-		unsigned int magic, owner_cpu;
-		void *owner;
-	#endif
-	#ifdef CONFIG_DEBUG_LOCK_ALLOC
-		struct lockdep_map dep_map;
-	#endif
-	} raw_spinlock_t;
+	static inline void __raw_spin_lock(raw_spinlock_t *lock)
+	{
+		preempt_disable();
+		spin_acquire(&lock->dep_map, 0, 0, _RET_IP_);
+		LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock);
+	}
 
 ```
 
-Note that the `CONFIG_DEBUG_LOCK_ALLOC` is used to wrap the inclusion of `struct lockdep_map dep_map`. The following code snippet is extracted from `<include/linux/lockdep.h>`.
+In the `spin_acquire()` function, the validator does a lot of things, the most notable one is that the code intercepts the locking operation and performs a number of tests:
+
+- The code looks at all other locks which are already held when a new lock is taken. For all of those locks, the validator looks for a past occurrence where any of them were taken after the new lock. If any such are found, it indicates a violation of locking order rules, and an eventual deadlock.
+
+- A stack of currently-held locks is maintained, so any lock being released should be at the top of the stack; anything else means that something strange is going on.
+
+- Any spinlock which is acquired by a hardware interrupt handler can never be held when interrupts are enabled. Consider what happens when this rule is broken. A kernel function, running in process context, acquires a specific lock. An interrupt arrives, and the associated interrupt handler runs on the same CPU; that handler then attempts to acquire the same lock. Since the lock is unavailable, the handler will spin, waiting for the lock to become free. But the handler has preempted the only code which will ever free that lock, so it will spin forever, deadlocking that processor.
+
+- To catch problems of this type, the validator records two bits of information for every lock it knows about: (1) whether the lock has ever been acquired in hardware interrupt context, and (2) whether the lock is ever held by code which runs with hardware interrupts enabled. If both bits are set, the lock is being used erroneously and an error is signaled.
+
+Similar tests are made for software interrupts, which present the same problems.
+
+There are mappings for different types of locks to the generic `lock_acquire()` function as defined in `<include/linux/lockdep.h>`, for example, the spinlock operations are mapped like below:
 
 ```c
 
-	#define MAX_LOCKDEP_SUBCLASSES		8UL
-	
 	/*
-	 * NR_LOCKDEP_CACHING_CLASSES ... Number of classes
-	 * cached in the instance of lockdep_map
-	 *
-	 * Currently main class (subclass == 0) and signle depth subclass
-	 * are cached in lockdep_map. This optimization is mainly targeting
-	 * on rq->lock. double_rq_lock() acquires this highly competitive with
-	 * single depth.
+	 * Map the dependency ops to NOP or to real lockdep ops, depending
+	 * on the per lock-class debug mode:
 	 */
-	#define NR_LOCKDEP_CACHING_CLASSES	2
+	
+	#define lock_acquire_exclusive(l, s, t, n, i)		lock_acquire(l, s, t, 0, 1, n, i)
+	#define lock_acquire_shared(l, s, t, n, i)		lock_acquire(l, s, t, 1, 1, n, i)
+	#define lock_acquire_shared_recursive(l, s, t, n, i)	lock_acquire(l, s, t, 2, 1, n, i)
+	
+	#define spin_acquire(l, s, t, i)		lock_acquire_exclusive(l, s, t, NULL, i)
+	#define spin_acquire_nest(l, s, t, n, i)	lock_acquire_exclusive(l, s, t, n, i)
+	#define spin_release(l, n, i)			lock_release(l, n, i)
+
+```
+
+The generic `lock_acquire()` and similar `lock_release()` functions are defined in `kernel/locking/lockdep.c`:
+
+```c
 
 	/*
-	 * Lock-classes are keyed via unique addresses, by embedding the
-	 * lockclass-key into the kernel (or module) .data section. (For
-	 * static locks we use the lock address itself as the key.)
+	 * We are not always called with irqs disabled - do that here,
+	 * and also avoid lockdep recursion:
 	 */
-	struct lockdep_subclass_key {
-		char __one_byte;
-	} __attribute__ ((__packed__));
+	void lock_acquire(struct lockdep_map *lock, unsigned int subclass,
+				  int trylock, int read, int check,
+				  struct lockdep_map *nest_lock, unsigned long ip)
+	{
+		unsigned long flags;
 	
-	struct lock_class_key {
-		struct lockdep_subclass_key	subkeys[MAX_LOCKDEP_SUBCLASSES];
-	};
+		if (unlikely(current->lockdep_recursion))
+			return;
+	
+		raw_local_irq_save(flags);
+		check_flags(flags);
+	
+		current->lockdep_recursion = 1;
+		trace_lock_acquire(lock, subclass, trylock, read, check, nest_lock, ip);
+		__lock_acquire(lock, subclass, trylock, read, check,
+			       irqs_disabled_flags(flags), nest_lock, ip, 0);
+		current->lockdep_recursion = 0;
+		raw_local_irq_restore(flags);
+	}
 
-	/*
-	 * Map the lock object (the lock instance) to the lock-class object.
-	 * This is embedded into specific lock instances:
-	 */
-	struct lockdep_map {
-		struct lock_class_key		*key;
-		struct lock_class		*class_cache[NR_LOCKDEP_CACHING_CLASSES];
-		const char			*name;
-	#ifdef CONFIG_LOCK_STAT
-		int				cpu;
-		unsigned long			ip;
-	#endif
-	};
+	void lock_release(struct lockdep_map *lock, int nested,
+				  unsigned long ip)
+	{
+		unsigned long flags;
+	
+		if (unlikely(current->lockdep_recursion))
+			return;
+	
+		raw_local_irq_save(flags);
+		check_flags(flags);
+		current->lockdep_recursion = 1;
+		trace_lock_release(lock, ip);
+		if (__lock_release(lock, nested, ip))
+			check_chain_key(current);
+		current->lockdep_recursion = 0;
+		raw_local_irq_restore(flags);
+	}
 
 ```
 
 ## Credits
 
-Part of this blog is mostly an edit from [http://www.google.com/patents/US8145903](http://www.google.com/patents/US8145903 "Method and system for a kernel lock validator") for its authority.
+The 1st part of this blog is mostly an edit from [http://www.google.com/patents/US8145903](http://www.google.com/patents/US8145903 "Method and system for a kernel lock validator") for its authority. The 2nd part of this blog is code reading notes by me but with some edits from [https://lwn.net/Articles/185666/](https://lwn.net/Articles/185666/ "The kernel lock validator").
 
 
 
