@@ -33,9 +33,9 @@ Enjoy!
 
 ```c
 
-static inline unsigned long lock_flag(enum lock_usage_bit bit)
-{
-	return 1UL << bit;
-}
+	static inline unsigned long lock_flag(enum lock_usage_bit bit)
+	{
+		return 1UL << bit;
+	}
 
 ```
