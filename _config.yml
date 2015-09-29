@@ -46,7 +46,7 @@ links:
 timezone:    Asia/Shanghai
 future:      true
 highlighter: pygments
-markdown:    kramdown
+markdown:    redcarpet #kramdown
 paginate:    5
 paginate_path: "page:num"
 
