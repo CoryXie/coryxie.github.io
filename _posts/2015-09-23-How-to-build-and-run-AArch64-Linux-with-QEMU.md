@@ -77,7 +77,6 @@ The last one will be important when we build the kernel next. Once you have conf
 In the QEMU, kernel boots and goes to the prompt:
 
 ``` console
-
     coryxie@ubuntu:~/projects/arm64/linux.git$ qemu-system-aarch64 -s -S -machine virt -cpu cortex-a57 -machine type=virt -nographic -smp 1 -m 128 -kernel arch/arm64/boot/Image  --append "console=ttyAMA0" -fsdev local,id=r,path=/home/coryxie/projects/arm64,security_model=none -device virtio-9p-device,fsdev=r,mount_tag=r
     Booting Linux on physical CPU 0x0
     Initializing cgroup subsys cpu
@@ -209,7 +208,6 @@ In the QEMU, kernel boots and goes to the prompt:
     buildroot.git     linux-4.0.tar.xz  qemu.git
     linux             linux.git
     # mount -t debugfs none /sys/kernel/debug
-    
 ```
 
 
