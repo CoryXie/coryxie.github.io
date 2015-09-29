@@ -46,7 +46,7 @@ links:
 timezone:    Asia/Shanghai
 future:      true
 highlighter: pygments
-markdown:    kramdown
+markdown:    redcarpet #kramdown
 paginate:    5
 paginate_path: "page:num"
 
@@ -67,6 +67,9 @@ kramdown:
     coderay_bold_every: 10
     coderay_css: class
 
+redcarpet:
+  extensions: ["tables", "autolink", "strikethrough", "space_after_headers", "with_toc_data", "fenced_code_blocks"]
+  
 prose:
   rooturl: '_posts'
   siteurl: 'http://farmercoder.org'
