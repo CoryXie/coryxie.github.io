@@ -69,7 +69,7 @@ As there are multiple rules, the ordering of the rules as they are tested is an 
 
 The before and after lists can be implemented using data structures such as a buffer, linked lists, and other similar referencing structures.
 
-## CONFIG_LOCKDEP implementation description
+## CONFIG_LOCKDEP implementation design
 
 As shown in FIG. 2, the kernel lock validator 130 can comprise a control module 205, a lock status module 210, a rules module 215 and a hash table 220. The control module 205 can be configured to manage and provide the functionality of the kernel lock validator 130. The control module 205, as with the other noted modules, can be implemented as a software routine (applet, program, etc.), a hardware component (ASIC, FPGA, etc.) or a combinations thereof.
 
@@ -105,6 +105,280 @@ If the lock, L, did not pass the rules, in step 440, the acquiring entity is inf
 
 In step 450, the control module 205 can generate a 64-bit hash value on the current sequence of the list of currently held locks and subsequently stored in the hash table 220.
 
+## CONFIG_LOCKDEP implementation details
+
+The `CONFIG_LOCKDEP` configuration is defined in `lib/Kconfig.debug` along with `CONFIG_DEBUG_LOCK_ALLOC` and `CONFIG_PROVE_LOCKING`.
+
+```c
+
+	config DEBUG_LOCK_ALLOC
+		bool "Lock debugging: detect incorrect freeing of live locks"
+		depends on DEBUG_KERNEL && TRACE_IRQFLAGS_SUPPORT && STACKTRACE_SUPPORT && LOCKDEP_SUPPORT
+		select DEBUG_SPINLOCK
+		select DEBUG_MUTEXES
+		select LOCKDEP
+		help
+		 This feature will check whether any held lock (spinlock, rwlock,
+		 mutex or rwsem) is incorrectly freed by the kernel, via any of the
+		 memory-freeing routines (kfree(), kmem_cache_free(), free_pages(),
+		 vfree(), etc.), whether a live lock is incorrectly reinitialized via
+		 spin_lock_init()/mutex_init()/etc., or whether there is any lock
+		 held during task exit.
+	
+	config PROVE_LOCKING
+		bool "Lock debugging: prove locking correctness"
+		depends on DEBUG_KERNEL && TRACE_IRQFLAGS_SUPPORT && STACKTRACE_SUPPORT && LOCKDEP_SUPPORT
+		select LOCKDEP
+		select DEBUG_SPINLOCK
+		select DEBUG_MUTEXES
+		select DEBUG_LOCK_ALLOC
+		select TRACE_IRQFLAGS
+		default n
+		help
+		 This feature enables the kernel to prove that all locking
+		 that occurs in the kernel runtime is mathematically
+		 correct: that under no circumstance could an arbitrary (and
+		 not yet triggered) combination of observed locking
+		 sequences (on an arbitrary number of CPUs, running an
+		 arbitrary number of tasks and interrupt contexts) cause a
+		 deadlock.
+	
+		 In short, this feature enables the kernel to report locking
+		 related deadlocks before they actually occur.
+	
+		 The proof does not depend on how hard and complex a
+		 deadlock scenario would be to trigger: how many
+		 participant CPUs, tasks and irq-contexts would be needed
+		 for it to trigger. The proof also does not depend on
+		 timing: if a race and a resulting deadlock is possible
+		 theoretically (no matter how unlikely the race scenario
+		 is), it will be proven so and will immediately be
+		 reported by the kernel (once the event is observed that
+		 makes the deadlock theoretically possible).
+	
+		 If a deadlock is impossible (i.e. the locking rules, as
+		 observed by the kernel, are mathematically correct), the
+		 kernel reports nothing.
+	
+		 NOTE: this feature can also be enabled for rwlocks, mutexes
+		 and rwsems - in which case all dependencies between these
+		 different locking variants are observed and mapped too, and
+		 the proof of observed correctness is also maintained for an
+		 arbitrary combination of these separate locking variants.
+	
+		 For more details, see Documentation/locking/lockdep-design.txt.
+	
+	config LOCKDEP
+		bool
+		depends on DEBUG_KERNEL && TRACE_IRQFLAGS_SUPPORT && STACKTRACE_SUPPORT && LOCKDEP_SUPPORT
+		select STACKTRACE
+		select FRAME_POINTER if !MIPS && !PPC && !ARM_UNWIND && !S390 && !MICROBLAZE && !ARC && !SCORE
+		select KALLSYMS
+		select KALLSYMS_ALL
+
+```
+
+This means that once `CONFIG_DEBUG_LOCK_ALLOC` is selected, `CONFIG_LOCKDEP` configuration will also be selected. The following subsections will try to describe the implementation details for `CONFIG_LOCKDEP`.
+
+### The basic object - `struct lock_class` ###
+
+A lock-type is defined as a `struct lock_class` structure in Linux Kernel, which is the basic object the validator operates upon.
+
+```c
+
+	/*
+	 * The lock-class itself:
+	 */
+	struct lock_class {
+		/*
+		 * class-hash:
+		 */
+		struct list_head		hash_entry;
+	
+		/*
+		 * global list of all lock-classes:
+		 */
+		struct list_head		lock_entry;
+	
+		struct lockdep_subclass_key	*key;
+		unsigned int			subclass;
+		unsigned int			dep_gen_id;
+	
+		/*
+		 * IRQ/softirq usage tracking bits:
+		 */
+		unsigned long			usage_mask;
+		struct stack_trace		usage_traces[XXX_LOCK_USAGE_STATES];
+	
+		/*
+		 * These fields represent a directed graph of lock dependencies,
+		 * to every node we attach a list of "forward" and a list of
+		 * "backward" graph nodes.
+		 */
+		struct list_head		locks_after, locks_before;
+	
+		/*
+		 * Generation counter, when doing certain classes of graph walking,
+		 * to ensure that we check one node only once:
+		 */
+		unsigned int			version;
+	
+		/*
+		 * Statistics counter:
+		 */
+		unsigned long			ops;
+	
+		const char			*name;
+		int				name_version;
+	
+	#ifdef CONFIG_LOCK_STAT
+		unsigned long			contention_point[LOCKSTAT_POINTS];
+		unsigned long			contending_point[LOCKSTAT_POINTS];
+	#endif
+	};
+
+```
+
+A class of locks is a group of locks that are logically the same with respect to locking rules, even if the locks may have multiple (possibly tens of thousands of) instantiations. For example a lock in the inode struct is one class, while each inode has its own instantiation of that lock class.
+
+The validator tracks the 'state' of lock-classes, and it tracks dependencies between different lock-classes. The validator maintains a rolling proof that the state and the dependencies are correct.
+
+#### `lock_class::usage_mask` ####
+
+The 'state' is is tracked by `usage_mask` as defined below:
+
+```c
+
+	/*
+	 * Lock-class usage-state bits:
+	 */
+	enum lock_usage_bit {
+	#define LOCKDEP_STATE(__STATE)		\
+		LOCK_USED_IN_##__STATE,		\
+		LOCK_USED_IN_##__STATE##_READ,	\
+		LOCK_ENABLED_##__STATE,		\
+		LOCK_ENABLED_##__STATE##_READ,
+	#include "lockdep_states.h"
+	#undef LOCKDEP_STATE
+		LOCK_USED,
+		LOCK_USAGE_STATES
+	};
+
+```
+
+The `lockdep_states.h` defines the lock states:
+
+- LOCKDEP_STATE(HARDIRQ)
+- LOCKDEP_STATE(SOFTIRQ)
+- LOCKDEP_STATE(RECLAIM_FS)
+
+So we are actually having `LOCK_USED_IN_HARDIRQ`, `LOCK_USED_IN_HARDIRQ_READ`, `LOCK_ENABLED_HARDIRQ`, `LOCK_ENABLED_HARDIRQ_READ` etc, as well as the `LOCK_USED`.
+
+The following code shows how the states are printed when reporting locking rule violations:
+
+```c
+
+	static inline unsigned long lock_flag(enum lock_usage_bit bit)
+	{
+		return 1UL << bit;
+	}
+	
+	static char get_usage_char(struct lock_class *class, enum lock_usage_bit bit)
+	{
+		char c = '.';
+	
+		if (class->usage_mask & lock_flag(bit + 2))
+			c = '+';
+		if (class->usage_mask & lock_flag(bit)) {
+			c = '-';
+			if (class->usage_mask & lock_flag(bit + 2))
+				c = '?';
+		}
+	
+		return c;
+	}
+
+```
+
+The bit position indicates STATE, STATE-read, for each of the states listed above, and the character displayed in each indicates:
+
+  - '.'  acquired while irqs disabled and not in irq context
+  - '-'  acquired in irq context
+  - '+'  acquired with irqs enabled
+  - '?'  acquired in irq context with irqs enabled.
+
+#### `lock_class::locks_after` and `lock_class::locks_before` ####
+
+
+Unlike an lock instantiation, the lock-class itself never goes away: when a lock-class is used for the first time after bootup it gets registered, and all subsequent uses of that lock-class will be attached to this lock-class.
+
+### The glue structure - `struct lockdep_map` ###
+
+The `struct lockdep_map` is the glue structure to link any kind of lockdep enabled locking mechanism. Each such locking structure would have a `struct lockdep_map` embedded into the structure definition. For example, the `struct raw_spinlock` as defined in `<include/linux/spinlock_types.h>` takes a `struct lockdep_map dep_map` field as below.
+
+```c
+
+	typedef struct raw_spinlock {
+		arch_spinlock_t raw_lock;
+	#ifdef CONFIG_GENERIC_LOCKBREAK
+		unsigned int break_lock;
+	#endif
+	#ifdef CONFIG_DEBUG_SPINLOCK
+		unsigned int magic, owner_cpu;
+		void *owner;
+	#endif
+	#ifdef CONFIG_DEBUG_LOCK_ALLOC
+		struct lockdep_map dep_map;
+	#endif
+	} raw_spinlock_t;
+
+```
+
+Note that the `CONFIG_DEBUG_LOCK_ALLOC` is used to wrap the inclusion of `struct lockdep_map dep_map`. The following code snippet is extracted from `<include/linux/lockdep.h>`.
+
+```c
+
+	#define MAX_LOCKDEP_SUBCLASSES		8UL
+	
+	/*
+	 * NR_LOCKDEP_CACHING_CLASSES ... Number of classes
+	 * cached in the instance of lockdep_map
+	 *
+	 * Currently main class (subclass == 0) and signle depth subclass
+	 * are cached in lockdep_map. This optimization is mainly targeting
+	 * on rq->lock. double_rq_lock() acquires this highly competitive with
+	 * single depth.
+	 */
+	#define NR_LOCKDEP_CACHING_CLASSES	2
+
+	/*
+	 * Lock-classes are keyed via unique addresses, by embedding the
+	 * lockclass-key into the kernel (or module) .data section. (For
+	 * static locks we use the lock address itself as the key.)
+	 */
+	struct lockdep_subclass_key {
+		char __one_byte;
+	} __attribute__ ((__packed__));
+	
+	struct lock_class_key {
+		struct lockdep_subclass_key	subkeys[MAX_LOCKDEP_SUBCLASSES];
+	};
+
+	/*
+	 * Map the lock object (the lock instance) to the lock-class object.
+	 * This is embedded into specific lock instances:
+	 */
+	struct lockdep_map {
+		struct lock_class_key		*key;
+		struct lock_class		*class_cache[NR_LOCKDEP_CACHING_CLASSES];
+		const char			*name;
+	#ifdef CONFIG_LOCK_STAT
+		int				cpu;
+		unsigned long			ip;
+	#endif
+	};
+
+```
 
 ## Credits
 
