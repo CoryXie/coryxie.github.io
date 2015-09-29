@@ -31,11 +31,11 @@ Enjoy!
 
 <img src="{{ site.url }}/images/2015-09-22-1/logo.png" alt="logo">
 
-```c_cpp
+~~~ c_cpp
 
 static inline unsigned long lock_flag(enum lock_usage_bit bit)
 {
 	return 1UL << bit;
 }
 
-```
+~~~
