@@ -4,4 +4,4 @@
 
 ### Site Introduction
 
-The site is for logging random thoughts and notes of a farmer coder who loves to work on Operating System Kernels.
+The site is for logging random thoughts and notes of a coder who loves to work on Operating System Kernels.
