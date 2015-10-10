@@ -4,7 +4,7 @@ title: "Linux Kernel CONFIG_LOCKDEP - Kernel Lock Validator"
 description:
 headline:
 modified: 2015-09-28
-category: KernelDevel
+category: KernelDev
 tags: [Kernel]
 imagefeature:
 mathjax:

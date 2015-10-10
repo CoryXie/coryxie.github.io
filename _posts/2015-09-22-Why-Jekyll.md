@@ -4,7 +4,7 @@ title: "Why Jekyll?"
 description: 
 headline: 
 modified: 2015-09-22
-category: webappdevel
+category: webappdev
 tags: [jekyll]
 imagefeature: 
 mathjax: 

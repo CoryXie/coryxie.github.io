@@ -4,7 +4,7 @@ title: "TrouSerS - Open Source TCG Software Stack"
 description:
 headline:
 modified: 2015-10-10
-category: SecureDevel
+category: SecureDev
 tags: [Security]
 imagefeature:
 mathjax:

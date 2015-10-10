@@ -117,10 +117,10 @@ prose:
           options:
             - name: "Personal"
               value: personal
-            - name: "KernelDevel"
-              value: kerneldevel
-            - name: "WebappDevel"
-              value: webappdevel
+            - name: "KernelDev"
+              value: kerneldev
+            - name: "WebappDev"
+              value: webappdev
             - name: "Engineering"
               value: engineering
             - name: "Interesting"
