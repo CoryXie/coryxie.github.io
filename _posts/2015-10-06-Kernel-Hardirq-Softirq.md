@@ -4,7 +4,7 @@ title: "Linux Kernel HARDIRQ and SOFTIRQ"
 description:
 headline:
 modified: 2015-10-06
-category: KernelDevel
+category: KernelDev
 tags: [Kernel]
 imagefeature:
 mathjax:

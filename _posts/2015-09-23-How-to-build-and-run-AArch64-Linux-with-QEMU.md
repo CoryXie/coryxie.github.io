@@ -4,7 +4,7 @@ title: "How to build and run AArch64 Linux with QEMU?"
 description: 
 headline: 
 modified: 2015-09-23
-category: KernelDevel
+category: KernelDev
 tags: [Kernel]
 imagefeature: 
 mathjax: 

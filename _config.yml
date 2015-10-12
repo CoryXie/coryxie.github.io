@@ -1,5 +1,5 @@
-title:            Farmer Coder
-description:      "Coding is fun"
+title:            Some Random Thoughts of a Coder
+description:      "Coding likes farming"
 logo:             logo.png
 disqus_shortname: FarmerCoder
 share:            true
@@ -15,7 +15,7 @@ owner:
   avatar:         logo.png
   email:          cory.xie@gmail.com
   # Use the coder's toolbox at http://coderstoolbox.net/string/#!encoding=xml&action=encode&charset=us_ascii to encode your description into XML string
-  description:    A farmer coder who loves to work on Operating System Kernels.
+  description:    A coder who loves to work on Operating System Kernels.
   # Social networking links used in footer. Update and remove as you like.
   facebook:       cory.xie.3
   github:         CoryXie
@@ -117,10 +117,10 @@ prose:
           options:
             - name: "Personal"
               value: personal
-            - name: "KernelDevel"
-              value: kerneldevel
-            - name: "WebappDevel"
-              value: webappdevel
+            - name: "KernelDev"
+              value: kerneldev
+            - name: "WebappDev"
+              value: webappdev
             - name: "Engineering"
               value: engineering
             - name: "Interesting"
