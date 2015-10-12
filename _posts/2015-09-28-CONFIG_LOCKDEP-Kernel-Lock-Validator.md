@@ -951,7 +951,7 @@ In `mark_irqflags()`, the mark operations is done by calling `mark_lock()`, such
 		 * We must printk outside of the graph_lock:
 		 */
 		if (ret == 2) {
-			printk("\nmarked lock as {%s}:\n", usage_str[new_bit]);
+			printk("\nmarked lock as '{'%s'}':\n", usage_str[new_bit]);
 			print_lock(this);
 			print_irqtrace_events(curr);
 			dump_stack();
