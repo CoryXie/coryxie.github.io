@@ -50,7 +50,7 @@ TBOOT is regarded as Measured Launch Environment (MLE) in the image above.
 
 The linker script file is based on `tboot-1.8.3/tboot/common/tboot.lds.x`, preprocessed with the following command in `tboot-1.8.3/tboot/Makefile`:
 
-```shell
+```console
 
 	TARGET_LDS := $(CURDIR)/common/tboot.lds
 	
