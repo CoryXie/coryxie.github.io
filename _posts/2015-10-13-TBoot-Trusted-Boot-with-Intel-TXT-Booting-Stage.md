@@ -13,11 +13,11 @@ comments: true
 featured: true
 ---
 
+The primary goal of using Intel TXT is to validate that there have been no unauthorized changes to critical parts of the code that provides the secure environment. This check is performed each time the environment launches, whether it is a cold boot, warm boot, or exiting one hypervisor and launching a new one. This blog entry is the 1st in a series of blogs trying to understand TBoot, and will focus on the inital booting stage.
+
 # Intel TXT Introduction
 
-The primary goal of using Intel TXT is to validate that there have been no unauthorized changes to critical parts of the code that provides the secure environment. This check is performed each time the environment launches, whether it is a cold boot, warm boot, or exiting one hypervisor and launching a new one.
-
-The technology supports both a static chain of trust and a dynamic chain of trust. The static chain of trust starts when the platform powers on (or the platform is reset), which resets all PCRs to their default value. For server platforms, the first measurement is made by hardware (i.e., the processor) to measure a digitally signed module (called an Authenticated Code Module or ACM) provided by the chipset manufacturer. The processor validates the signature and integrity of the signed module before executing it. The ACM then measures the first BIOS code module, which can make additional measurements.
+The Intel TXT technology supports both a static chain of trust and a dynamic chain of trust. The static chain of trust starts when the platform powers on (or the platform is reset), which resets all PCRs to their default value. For server platforms, the first measurement is made by hardware (i.e., the processor) to measure a digitally signed module (called an Authenticated Code Module or ACM) provided by the chipset manufacturer. The processor validates the signature and integrity of the signed module before executing it. The ACM then measures the first BIOS code module, which can make additional measurements.
 
 The measurements of the ACM and BIOS code modules are extended to PCR0, which is said to hold the static core root of trust measurement (CRTM) as well as the measurement of the BIOS Trusted Computing Base (TCB). The BIOS measures additional components into PCRs as follows:
 
@@ -163,13 +163,19 @@ GRUB2 does not pass the file name in the command line field of the multiboot ent
 
 The code in `tboot-1.8.3/tboot/common/boot.S` does the following initalization:
 
-1. Setup the GDTR using the current CS reigster as the only guaranteed correct segement, all data segement is using the same segement.
-2. Set up the `bsp_stack` as the stack pointer.
-3. Reset EFLAGS (subsumes CLI and CLD).
-4. Preserve EAX to be a param to `begin_launch()` which contains either `MULTIBOOT_MAGIC` or `MULTIBOOT2_MAGIC`.
-5. Initialize BSS to all zero.
-6. Load IDTR and enable MCE.
-7. Pass multiboot info struct (in `EBX`), magic (in `EDX`) and call measured launch code `begin_launch()` which is the 1st C code in TBoot to be executed.
+Step 1. Setup the GDTR using the current CS reigster as the only guaranteed correct segement, all data segement is using the same segement.
+
+Step 2. Set up the `bsp_stack` as the stack pointer.
+
+Step 3. Reset EFLAGS (subsumes CLI and CLD).
+
+Step 4. Preserve EAX to be a param to `begin_launch()` which contains either `MULTIBOOT_MAGIC` or `MULTIBOOT2_MAGIC`.
+
+Step 5. Initialize BSS to all zero.
+
+Step 6. Load IDTR and enable MCE.
+
+Step 7. Pass multiboot info struct (in `EBX`), magic (in `EDX`) and call measured launch code `begin_launch()` which is the 1st C code in TBoot to be executed.
 
 ```c
 
@@ -227,6 +233,8 @@ The code in `tboot-1.8.3/tboot/common/boot.S` does the following initalization:
 ```
 
 # TBoot Measured Launch Stage
+
+The `begin_launch()` function is the first C function that starts the `Measured Launch Stage`. This section tries to describe the several initalization steps of the launch stage. This function is defined in `tboot-1.8.3/tboot/common/tboot.c`.
 
 ```c
 
@@ -359,9 +367,11 @@ The code in `tboot-1.8.3/tboot/common/boot.S` does the following initalization:
 
 During the `begin_launch()` boot stage, TBoot will do the following:
 
-1. Save the boot loader `multiboot information` into `g_ldr_ctx`, with the `type` set to `MB1_ONLY` or `MB2_ONLY` accordingly (TBoot does not support other types and will be `doomed` for other types).
-2. On pre-SENTER boot, copy command line from `multiboot information` to `g_cmdline[]` buffer.
-3. The command line is parsed and saved into `g_tboot_param_values[]`, with default values as specified in `g_tboot_cmdline_options[]`.
+Step 1. Save the boot loader `multiboot information` into `g_ldr_ctx`, with the `type` set to `MB1_ONLY` or `MB2_ONLY` accordingly (TBoot does not support other types and will be `doomed` for other types).
+
+Step 2. On pre-SENTER boot, copy command line from `multiboot information` to `g_cmdline[]` buffer.
+
+Step 3. The command line is parsed and saved into `g_tboot_param_values[]`, with default values as specified in `g_tboot_cmdline_options[]`.
 
 ```c
 
@@ -391,7 +401,8 @@ During the `begin_launch()` boot stage, TBoot will do the following:
 	static char g_tboot_param_values[ARRAY_SIZE(g_tboot_cmdline_options)][MAX_VALUE_LEN];
 
 ```
-4. If the command line specifies `call_racm` to be `check`, it tries to call `check_racm_result()`，in turn it calls `txt_get_racm_error()` to dump the RACM (Revocation (RACM) SINIT) errors.
+
+Step 4. If the command line specifies `call_racm` to be `check`, the `begin_launch()` function tries to call `check_racm_result()` in turn it calls `txt_get_racm_error()` to dump the RACM (Revocation (RACM) SINIT) errors.
 
 ```c
 
@@ -502,7 +513,7 @@ During the `begin_launch()` boot stage, TBoot will do the following:
 
 ```
 
-5. It calls `supports_txt()` to make sure the machine is capable of TXT operation. It verifies the processor is Intel CPU, and it should suppoprt both SMX and VMX operations; it then enables SMX operations to detect all the requires SMX features are available (otherwise it will disable SMX). The return result of `supports_txt()` identifies the type of error, such as `TB_ERR_SMX_NOT_SUPPORTED`, `TB_ERR_VMX_NOT_SUPPORTED`, `TB_ERR_TXT_NOT_SUPPORTED`, or `TB_ERR_NONE` when it is capable of supporting Intel TXT. This function is implemented in `tboot-1.8.3/tboot/txt/verify.c`.
+Step 5. The `begin_launch()` function calls `supports_txt()` to make sure the machine is capable of TXT operation. It verifies the processor is Intel CPU, and it should suppoprt both SMX and VMX operations; it then enables SMX operations to detect all the requires SMX features are available (otherwise it will disable SMX). The return result of `supports_txt()` identifies the type of error, such as `TB_ERR_SMX_NOT_SUPPORTED`, `TB_ERR_VMX_NOT_SUPPORTED`, `TB_ERR_TXT_NOT_SUPPORTED`, or `TB_ERR_NONE` when it is capable of supporting Intel TXT. This function is implemented in `tboot-1.8.3/tboot/txt/verify.c`.
 
 ```c
 
@@ -559,7 +570,7 @@ During the `begin_launch()` boot stage, TBoot will do the following:
 
 ```
 
-6. On return from `supports_txt()` (or some other functions), it calls `apply_policy()` to check the error and determine the next steps. It calls `write_tb_error_code()` to record the error condition into TPM NVRAM, and then `evaluate_error()` to check the potential action according to specific error types. Only when the action is `TB_POLACT_CONTINUE` can the code return and make the process continue. In the case of `TB_POLACT_UNMEASURED_LAUNCH`, it may still call `s3_launch()` (if `s3_flag` set), or call `launch_kernel(false)` to do a non-measured launch. The `apply_policy()` is defined in `tboot-1.8.3/tboot/common/policy.c`.
+Step 6. On returning from `supports_txt()` (or some other functions), the `begin_launch()` function calls `apply_policy()` to check the error and determine the next steps. It calls `write_tb_error_code()` to record the error condition into TPM NVRAM, and then `evaluate_error()` to check the potential action according to specific error types. Only when the action is `TB_POLACT_CONTINUE` can the code return and make the process continue. In the case of `TB_POLACT_UNMEASURED_LAUNCH`, it may still call `s3_launch()` (if `s3_flag` set), or call `launch_kernel(false)` to do a non-measured launch. The `apply_policy()` is defined in `tboot-1.8.3/tboot/common/policy.c`.
 
 ```c
 
@@ -601,7 +612,7 @@ During the `begin_launch()` boot stage, TBoot will do the following:
 
 ```
 
-7. It calls `txt_verify_platform()`, to check if `TXT_RESET.STS` is set, since if it is, the `SENTER` will fail.
+Step 7. The `begin_launch()` function calls `txt_verify_platform()`, to check if `TXT_RESET.STS` is set, since if it is, the `SENTER` will fail.
 
 ```c
 	
@@ -633,7 +644,7 @@ During the `begin_launch()` boot stage, TBoot will do the following:
 
 ```
 
-8. It calls `verify_loader_context()` to make sure the `multiboot information` contains `modules`, which are the `OS Kernel and Other Facilities` to be used. This is implemented in `tboot-1.8.3/tboot/common/loader.c`.
+Step 8. The `begin_launch()` function calls `verify_loader_context()` to make sure the `multiboot information` contains `modules`, which are the `OS Kernel and Other Facilities` to be used. This is implemented in `tboot-1.8.3/tboot/common/loader.c`.
 
 ```c
 
@@ -674,7 +685,7 @@ During the `begin_launch()` boot stage, TBoot will do the following:
 
 ```
 
-9. It calls `` to check if the platform has already been launched. This checks the `SENTER.DONE.STS` bit in `TXT.STS – Status` register. The chipset sets this bit when it sees all of the threads have done an `TXT.CYC.SENTER-ACK`. When any of the threads does the `TXT.CYC.SEXIT-ACK` the `TXT.THREADS.JOIN` and `TXT.THREADS.EXISTS` registers will not be equal, so the chipset will clear this bit. If it is already launched, then it will call `post_launch()`, which will be discussed later.
+Step 9. The `begin_launch()` function calls `txt_is_launched()` to check if the platform has already been launched. This checks the `SENTER.DONE.STS` bit in `TXT.STS – Status` register. The chipset sets this bit when it sees all of the threads have done an `TXT.CYC.SENTER-ACK`. When any of the threads does the `TXT.CYC.SEXIT-ACK` the `TXT.THREADS.JOIN` and `TXT.THREADS.EXISTS` registers will not be equal, so the chipset will clear this bit. If it is already launched, then it will call `post_launch()`, which will be discussed later.
 
 ```c
 
@@ -689,7 +700,7 @@ During the `begin_launch()` boot stage, TBoot will do the following:
 
 ```
 
-10. If not already launched, it calls `prepare_cpu()`, in turn `txt_prepare_cpu()` to prepare the CPU for launch. This is implemented in `tboot-1.8.3/tboot/txt/txt.c`. 
+Step 10. If not already launched, the `begin_launch()` function calls `prepare_cpu()`, in turn calling `txt_prepare_cpu()` to prepare the CPU for launch. This is implemented in `tboot-1.8.3/tboot/txt/txt.c`. 
 
 ```c
 	
@@ -790,7 +801,7 @@ During the `begin_launch()` boot stage, TBoot will do the following:
 
 ```
 
-11. If `s3_flag` is set, it will call `prepare_tpm()` [implemented in `tboot-1.8.3/tboot/common/tpm.c`], then call to `txt_s3_launch_environment()` [implemented in `tboot-1.8.3/tboot/txt/txt.c`] to do S3 launch. 
+Step 11. If `s3_flag` is set, the `begin_launch()` function will call `prepare_tpm()` [implemented in `tboot-1.8.3/tboot/common/tpm.c`], then call to `txt_s3_launch_environment()` [implemented in `tboot-1.8.3/tboot/txt/txt.c`] to do S3 launch. 
 
 ```c
 
@@ -870,7 +881,7 @@ During the `begin_launch()` boot stage, TBoot will do the following:
 
 ```
 
-12. The normal boot launch is done finally in `txt_launch_environment()`, as implemented in `tboot-1.8.3/tboot/txt/txt.c`. 
+Step 12. The normal boot launch in the `begin_launch()` function is done finally in `txt_launch_environment()`, as implemented in `tboot-1.8.3/tboot/txt/txt.c`. 
 
 ```c
 	
