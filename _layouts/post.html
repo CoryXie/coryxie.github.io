@@ -20,6 +20,7 @@
                         <img src="{{ site.url }}/images/{{ site.logo }}" alt="Blog Logo" />
                     </a>
         
+        <div class="notepad-blog-menu"> <iframe src="https://www.lens.org/lens/embed/search?theme=dark"></iframe> </div>
                 <div class="notepad-blog-menu">      
     <div class="notepad-mobile-menu show-for-small">
         <a href="#"><i class="fa fa-bars"></i></a>
@@ -28,7 +29,6 @@
         <li class="notepad-mobile-close-btn show-for-small text-right">
             <a href="#"><i class="fa fa-times"></i></a>
         </li>
-        <li> <iframe src="https://www.lens.org/lens/embed/search?theme=dark" height="100px" width="100%" frameborder=0></iframe> </li>
 {% for link in site.links %}
             <li>{% if link.external %}
                     <a href="{{ link.url }}">{{ link.title }}</a>
