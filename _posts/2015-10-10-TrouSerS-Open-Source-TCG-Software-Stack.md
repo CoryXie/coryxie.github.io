@@ -19,7 +19,7 @@ Demand for TPM support is increasing with more and more vendors selling low-cost
 
 Trusted Platform Module (TPM) is an international standard for a secure cryptoprocessor, which is a dedicated microprocessor designed to secure hardware by integrating cryptographic keys into devices. In practice a TPM can be used for various different security applications such as secure boot and key storage. TPM is naturally supported only on devices that have TPM hardware support. If the hardware has TPM support but it is not showing up, it might need to be enabled in the BIOS settings. The following is an image for the layered architecture of a TPM enabled Intel Platform.
 
-<img src="{{ site.url }}/images/2015-10-10-1/TPM-Platform.png" alt="TPM/TXT/TBoot/TrouSerS/OAT">
+<img src="{{ site.baseurl }}/images/2015-10-10-1/TPM-Platform.png" alt="TPM/TXT/TBoot/TrouSerS/OAT">
 
 ## TrouSerS
 
@@ -38,11 +38,11 @@ All clients use a TrouSerS library containing the following:
 
 The TSS is comprised of three layers, as demonstrated in the following figure.
 
-<img src="{{ site.url }}/images/2015-10-10-1/TSS-Layers.png" alt="Example object model of a TSS instance">
+<img src="{{ site.baseurl }}/images/2015-10-10-1/TSS-Layers.png" alt="Example object model of a TSS instance">
 
 A more detailed view of the TSS components is provided below.
 
-<img src="{{ site.url }}/images/2015-10-10-1/TSS-Components.png" alt="TSS Components">
+<img src="{{ site.baseurl }}/images/2015-10-10-1/TSS-Components.png" alt="TSS Components">
 
 ### TCSD
 
@@ -83,7 +83,7 @@ device node on the device file system and waits for the TPM device driver to com
 
 The following figure describes the communication sequence between TrouSerS and the TPM.
 
-<img src="{{ site.url }}/images/2015-10-10-1/TDDI-TPM.png" alt="Communication between TrouSerS TDDI and TPM">
+<img src="{{ site.baseurl }}/images/2015-10-10-1/TDDI-TPM.png" alt="Communication between TrouSerS TDDI and TPM">
 
 
 ### TPM services provided by the TrouSerS TSS API

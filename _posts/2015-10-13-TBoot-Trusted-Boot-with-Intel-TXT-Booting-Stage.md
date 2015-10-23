@@ -42,7 +42,7 @@ The integrity of the LCP and its lists of known-good measurements are protected 
 
 The following is the `Measured Launch Phases` of Intel TXT.
 
-<img src="{{ site.url }}/images/2015-10-13-1/txt-timeline.png" alt="TXT Measured Launch Phases">
+<img src="{{ site.baseurl }}/images/2015-10-13-1/txt-timeline.png" alt="TXT Measured Launch Phases">
 
 TBOOT is regarded as Measured Launch Environment (MLE) in the image above.
 
@@ -124,7 +124,7 @@ The following `tboot-1.8.3/tboot/common/tboot.lds.x` contents exhibits the memor
 
 ```
 
-<img src="{{ site.url }}/images/2015-10-13-1/tboot-memory-layout.png" alt="TBOOT Memory Layout">
+<img src="{{ site.baseurl }}/images/2015-10-13-1/tboot-memory-layout.png" alt="TBOOT Memory Layout">
 
 TBOOT is assuming the traditional OS Kerenel role with respect to GRUB (thus the Multiboot Header is present in its 1st page of the TBOOT image). The tboot module must be added as the 'kernel' in the grub.conf file. The existing 'kernel' entry should follow as a 'module'. The SINIT AC module must be added to the grub.conf boot config as the last module, e.g.:
 
@@ -1174,7 +1174,7 @@ With the above location described, we can then understand how the MLE is mapped 
 
 For Intel X86 in 32 bit mode, the page tables are organized in 2 levels, with the base address of the 1st level pointed to by the 1st entry in a pointer table (called Page Directory Pointer Table, PDPT). Each entry in the 1st level page table (called Page Directory, PGD) consists of a single pointer to a 2nd level page table (called Page Table, PGT). Each entry in the 2nd level page table contains an architecture-specific Page Table Entry (PTE). Each PTE stores a physical address, protection information, and page size information. The following is an illustration of the page table hierarchy.
 
-<img src="{{ site.url }}/images/2015-10-13-1/tboot-page-table.png" alt="TBOOT Page Table">
+<img src="{{ site.baseurl }}/images/2015-10-13-1/tboot-page-table.png" alt="TBOOT Page Table">
 
 Step 3. Calling `init_txt_heap()` to initialize the TXT Heap, which is a pretty complex operation and will be further described in next section.
 

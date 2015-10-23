@@ -417,7 +417,7 @@ The softirq code `do_softirq()` works as follows in `linux-4.2/kernel/softirq.c`
 
 The processing for each type of softirq occurs in the above `while()` loop in `__do_softirq()`, the principle is very simple, as demostrated in the following figure: 
 
-<img src="{{ site.url }}/images/2015-10-06-1/local_softirq_pending.png" alt="Kernel local_softirq_pending() macro">
+<img src="{{ site.baseurl }}/images/2015-10-06-1/local_softirq_pending.png" alt="Kernel local_softirq_pending() macro">
 
 ```c
 	
