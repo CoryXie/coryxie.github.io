@@ -439,7 +439,7 @@ The search starts from the root node. It uses the `struct node *c` pointer to ke
 
 The `bin_search()` distinguishes leaf nodes and internal nodes. For internal nodes represented by `struct node`, the `keys[]` array is separate with `blockptrs[]` array, so it can just pass `c->keys` to `generic_bin_search()` for the range of keys to be compared, and the `item_size` to be `sizeof(struct key)`. For leaf nodes represented by `struct leaf`, the keys are embedded in the `items[]` array (each item has a key in its 1st filed), so it has to pass `l->items` to `generic_bin_search()` for the range of keys to be compared, and the `item_size` to be `sizeof(struct item)`. 
 
-The `generic_bin_search()` treats the buffer pointed to by parameter `p` to be an array of key items, each key item has a size of `item_size`. The `max` parameter should be passed as the number of key items to be compared. Then it starts a typical binary search in the key items array: 1) Initialize `low=0` and `high=max` 2) Get `tmp` to be the `mid=(low + high)/2` entry 3) Compare `key` with `tmp` by `ret = comp_keys(tmp, key)` 4) Based on the comparison result, alter `low` or `high` or return `0` when a match is found (saving its location in `slot`) 5) When the while loop fails to find a match, it returns `1` (saving `low` in the `slot`).
+The `generic_bin_search()` treats the buffer pointed to by parameter `p` to be an array of key items, each key item has a size of `item_size`. The `max` parameter should be passed as the number of key items to be compared. Then it starts a typical binary search in the key items array: 1) Initialize `low=0` and `high=max` 2) Get `tmp` to be the `mid=(low + high)/2` entry 3) Compare `key` with `tmp` by `ret = comp_keys(tmp, key)` 4) Based on the comparison result, alter `low` or `high` or return `0` when a match is found (saving its location in `slot`) 5) When the while loop fails to find a match, it returns `1` (saving `low` in the `slot`, meaning no match found and the `slot` to be searched for the next level is at position `low`, and since the while loop can only break when `low` and `heigh` equals, it is in the middle of the node key items array).
 
 # Inserting Items into BTree
 
@@ -506,6 +506,8 @@ The insertion of the BTree is done by `insert_item()`.
 	}
 
 ```
+
+The 1st thing the `insert_item()` does is to make sure the tree does not already contain a node with the same `key`, so when it finds one node with `key` by calling `ret = search_slot(root, key, &path)` it simply returns `-EEXIST`.
 
 
 
