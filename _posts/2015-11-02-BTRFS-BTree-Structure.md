@@ -507,9 +507,119 @@ The insertion of the BTree is done by `insert_item()`.
 
 ```
 
-The 1st thing the `insert_item()` does is to make sure the tree does not already contain a node with the same `key`, so when it finds one node with `key` by calling `ret = search_slot(root, key, &path)` it simply returns `-EEXIST`.
+The 1st thing `insert_item()` does is to make sure the tree does not already contain a node with the same `key`, so when it finds one node with `key` by calling `ret = search_slot(root, key, &path)` it simply returns `EEXIST`.
 
+The 2nd thing `insert_item()` does is to check if the leaf has space for another data item. Note that the `path.nodes[0]` is casted to be `struct leaf` pointer, becasue level 0 is always the leaf of the B-tree. A data item should include space for a `struct item` and the buffer to hold the actual data. When data item is inserted, the `struct leaf` will have the following layout.
 
+<img src="{{ site.baseurl }}/images/2015-11-02-1/btrfs-struct-leaf-with-data.png" alt="btrfs struct leaf with data">
+
+The actual check for free space is done with `leaf_free_space(leaf)`, which returns the free space of the leaf, then it is compared with `sizeof(struct item) + data_size`. 
+
+```c
+
+	static inline unsigned int leaf_data_end(struct leaf *leaf)
+	{
+		unsigned int nr = leaf->header.nritems;
+		if (nr == 0)
+			return ARRAY_SIZE(leaf->data);
+		return leaf->items[nr-1].offset;
+	}
+	
+	static inline int leaf_free_space(struct leaf *leaf)
+	{
+		int data_end = leaf_data_end(leaf);
+		int nritems = leaf->header.nritems;
+		char *items_end = (char *)(leaf->items + nritems + 1);
+		return (char *)(leaf->data + data_end) - (char *)items_end;
+	}
+
+```
+
+The `leaf_data_end()` calculates the `offset` of the last data item (from the `leaf->data` base address). The `items_end` in `leaf_free_space()` is the end address of the last `struct item`. Thus `(char *)(leaf->data + data_end) - (char *)items_end` is the size of free space between last `struct item` and last data item.
+
+If `leaf_free_space(leaf)` says there is no enough space for a new data item, then `split_leaf(root, &path, data_size)` is called to split the leaf. This splits the path's leaf into two, making sure there is at least `data_size` available for the resulting leaf level of the path. This is described in detail in the subsection **Splitting Leaf Node**. The splitting may return a new leaf node to be used for inserting data. However this still needs another verification, so it casts again to `struct leaf` pointer and checks again for proper free space. If it fails, it is surely making a `BUG()`.
+
+Then the 3rd thing for `insert_item()` is to get a `slot` as `path.slots[0]`, which is the place to insert data into the leaf. However, if `slot` is `0` then `fixup_low_keys(&path, key, 1)` is called to adjust the pointers going up the tree, starting at `level` making sure the right key of each node points to 'key'. This is used after shifting pointers to the left, so it stops fixing up pointers when a given leaf/node is not in slot 0 of the higher levels.
+
+```c
+
+	static void fixup_low_keys(struct ctree_path *path, struct key *key,
+				     int level)
+	{
+		int i;
+		/* adjust the pointers going up the tree */
+		for (i = level; i < MAX_LEVEL; i++) {
+			struct node *t = path->nodes[i];
+			int tslot = path->slots[i];
+			if (!t)
+				break;
+			memcpy(t->keys + tslot, key, sizeof(*key));
+			if (tslot != 0)
+				break;
+		}
+	}
+
+```
+
+The next thing for `insert_item()` is based on the `slot` position for the inserting data item. If `slot` is not equal to `nritems`, it means inserting the data item in an existing item. In this case, all data items from `slot` to `nritems` will have to `shfit left` (being moved one `data_size` offset, thus each of these `offset` are subtracted by `data_size`). The `items` and `data` from `slot` to `nritems` are also moved by `memmove()`.
+
+Finally, the `insert_item()` puts in place for the new data item, the `key`, `offset`, and `size` fields of `struct item` for the proper `slot` are updated, and `data` is copied in place for `data_size` bytes. The `nritems` in the header is increased by 1 indicating a complete of new data item insertion. To be sure, `leaf_free_space(leaf)` is called to verify the leaf node is not having `negtive` free space.
+
+## Splitting Leaf Node
+
+```c
+
+	int split_leaf(struct ctree_root *root, struct ctree_path *path, int data_size)
+	{
+		struct leaf *l = (struct leaf *)path->nodes[0];
+		int nritems = l->header.nritems;
+		int mid = (nritems + 1)/ 2;
+		int slot = path->slots[0];
+		struct leaf *right;
+		int space_needed = data_size + sizeof(struct item);
+		int data_copy_size;
+		int rt_data_off;
+		int i;
+		int ret;
+	
+		if (push_leaf_left(root, path, data_size) == 0) {
+			return 0;
+		}
+		right = malloc(sizeof(struct leaf));
+		memset(right, 0, sizeof(*right));
+		if (mid <= slot) {
+			if (leaf_space_used(l, mid, nritems - mid) + space_needed >
+				LEAF_DATA_SIZE)
+				BUG();
+		} else {
+			if (leaf_space_used(l, 0, mid + 1) + space_needed >
+				LEAF_DATA_SIZE)
+				BUG();
+		}
+		right->header.nritems = nritems - mid;
+		data_copy_size = l->items[mid].offset + l->items[mid].size -
+				 leaf_data_end(l);
+		memcpy(right->items, l->items + mid,
+		       (nritems - mid) * sizeof(struct item));
+		memcpy(right->data + LEAF_DATA_SIZE - data_copy_size,
+		       l->data + leaf_data_end(l), data_copy_size);
+		rt_data_off = LEAF_DATA_SIZE -
+			     (l->items[mid].offset + l->items[mid].size);
+		for (i = 0; i < right->header.nritems; i++) {
+			right->items[i].offset += rt_data_off;
+		}
+		l->header.nritems = mid;
+		ret = insert_ptr(root, path, &right->items[0].key,
+				  (u64)right, 1);
+		if (mid <= slot) {
+			path->nodes[0] = (struct node *)right;
+			path->slots[0] -= mid;
+			path->slots[1] += 1;
+		}
+		return ret;
+	}
+
+```
 
 # Removing Items from BTree
 
