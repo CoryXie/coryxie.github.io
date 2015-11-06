@@ -25,7 +25,7 @@ The `btrfs-progs` is a set of user space programs to be used with BTRFS. It can 
 
 ```
 
-The very 1st commit by the creator *Chris Mason* has only 1 file called `ctree.c`, which has comment `Initial checkin, basic working tree code`. And the 2nd commit adds one missing header file ``, and updates a bit to `Faster deletes, add Makefile and kerncompat.h`. So with the two initial commits, it is able to compile and run with basic tree management. 
+The very 1st commit by the creator *Chris Mason* has only 1 file called `ctree.c`, which has comment `Initial checkin, basic working tree code`. And the 2nd commit adds one missing header file `kerncompat.h`, and updates a bit to `Faster deletes, add Makefile and kerncompat.h`. So with the two initial commits, it is able to compile and run with basic tree management. 
 
 ```console
 
@@ -567,6 +567,8 @@ Finally, the `insert_item()` puts in place for the new data item, the `key`, `of
 
 ## Splitting Leaf Node
 
+As we have seen in `insert_item()`, when a leaf node does not have enough space for a new data item, it tries to split the leaf node into two, and insert the data into the newly split resultant node. This is done by `split_leaf()`.
+
 ```c
 
 	int split_leaf(struct ctree_root *root, struct ctree_path *path, int data_size)
@@ -621,5 +623,155 @@ Finally, the `insert_item()` puts in place for the new data item, the `key`, `of
 
 ```
 
+The most complicated code in this function is the `push_leaf_left()`, which pushes some data in the path leaf to the left, trying to free up at least `data_size` bytes, it returns zero if the push worked, nonzero otherwise. This is described in detail in the next subsection **Pushing Left for Items in Leaf Node**.
+
+If the `push_leaf_left()` fails, it means a new leaf should be inserted. It allocates a `struct leaf` and marking it `right`.
+
+## Pushing Left for Items in Leaf Node
+
+```c
+
+	int push_leaf_left(struct ctree_root *root, struct ctree_path *path,
+			   int data_size)
+	{
+		struct leaf *right = (struct leaf *)path->nodes[0];
+		struct leaf *left;
+		int slot;
+		int i;
+		int free_space;
+		int push_space = 0;
+		int push_items = 0;
+		struct item *item;
+		int old_left_nritems;
+	
+		slot = path->slots[1];
+		if (slot == 0) {
+			return 1;
+		}
+		if (!path->nodes[1]) {
+			return 1;
+		}
+		left = read_block(path->nodes[1]->blockptrs[slot - 1]);
+		free_space = leaf_free_space(left);
+		if (free_space < data_size + sizeof(struct item)) {
+			return 1;
+		}
+		for (i = 0; i < right->header.nritems; i++) {
+			item = right->items + i;
+			if (path->slots[0] == i)
+				push_space += data_size + sizeof(*item);
+			if (item->size + sizeof(*item) + push_space > free_space)
+				break;
+			push_items++;
+			push_space += item->size + sizeof(*item);
+		}
+		if (push_items == 0) {
+			return 1;
+		}
+		/* push data from right to left */
+		memcpy(left->items + left->header.nritems,
+			right->items, push_items * sizeof(struct item));
+		push_space = LEAF_DATA_SIZE - right->items[push_items -1].offset;
+		memcpy(left->data + leaf_data_end(left) - push_space,
+			right->data + right->items[push_items - 1].offset,
+			push_space);
+		old_left_nritems = left->header.nritems;
+		for(i = old_left_nritems; i < old_left_nritems + push_items; i++) {
+			left->items[i].offset -= LEAF_DATA_SIZE -
+				left->items[old_left_nritems -1].offset;
+		}
+		left->header.nritems += push_items;
+	
+		/* fixup right node */
+		push_space = right->items[push_items-1].offset - leaf_data_end(right);
+		memmove(right->data + LEAF_DATA_SIZE - push_space, right->data +
+			leaf_data_end(right), push_space);
+		memmove(right->items, right->items + push_items,
+			(right->header.nritems - push_items) * sizeof(struct item));
+		right->header.nritems -= push_items;
+		push_space = LEAF_DATA_SIZE;
+		for (i = 0; i < right->header.nritems; i++) {
+			right->items[i].offset = push_space - right->items[i].size;
+			push_space = right->items[i].offset;
+		}
+		fixup_low_keys(path, &right->items[0].key, 1);
+	
+		/* then fixup the leaf pointer in the path */
+		if (path->slots[0] < push_items) {
+			path->slots[0] += old_left_nritems;
+			path->nodes[0] = (struct node*)left;
+			path->slots[1] -= 1;
+		} else {
+			path->slots[0] -= push_items;
+		}
+		return 0;
+	}
+
+```
+
+The 1st step in `push_leaf_left()` is to check if the parent (level 1) of the leaf node is on slot 0, which means it is not possible to `push left` since the leaf is already on the most left side. Then the `read_block(path->nodes[1]->blockptrs[slot - 1])` reads in the node to the left of the current leaf node, and mark it `left`. And `leaf_free_space(left)` is called to check free space on this `left` node, failing the `push left` operation if there is no enough space for `data_size` (plus a `struct item`) on `left` node (the free space on the left node is saved in `push_space` variable). Then a `for` loop is performed to calculate the number of items that can be `pushed` to `left`, this starts from slot 0 on `right` leaf node, for each item scanned, it accumulates the total space occupied by these items in `push_space` variable. The `for` loop treats the slot that is `path->slots[0]` specially, which will be the `data_size` of data item to be inserted, and exit the loop once it is not enough to push more items from `right` to `left`. After that, if it is determined to be impossible to push any item, `push_leaf_left()` returns 1 indicating failing the `push`. The actual `push` operation is just some `memcpy()` to copy the items and data buffer from the `right` to the `left` node, and adjust the `left` offsets and the corresponding `nritems` header field. Then the `right` node will have to be fixed up by `memmove()` to move remaining items not pushed to `left` into items starting from slot 0, and offsets and header `nritems` updated correspondingly. Finally, the `path` is updated, with `fixup_low_keys()` for the parent `key`, and change `slots[0]` and `nodes[0]` to the left node when the `new data` is also `pushed`, to reflect the correct node bingding in the leaf.
+
+<img src="{{ site.baseurl }}/images/2015-11-02-1/btrfs-struct-leaf-push-left.png" alt="btrfs struct leaf push left">
+
 # Removing Items from BTree
+
+```c
+
+	int del_item(struct ctree_root *root, struct key *key)
+	{
+		int ret;
+		int slot;
+		struct leaf *leaf;
+		struct ctree_path path;
+		int doff;
+		int dsize;
+	
+		init_path(&path);
+		ret = search_slot(root, key, &path);
+		if (ret != 0)
+			return -1;
+	
+		leaf = (struct leaf *)path.nodes[0];
+		slot = path.slots[0];
+		doff = leaf->items[slot].offset;
+		dsize = leaf->items[slot].size;
+	
+		if (slot != leaf->header.nritems - 1) {
+			int i;
+			int data_end = leaf_data_end(leaf);
+			memmove(leaf->data + data_end + dsize,
+				leaf->data + data_end,
+				doff - data_end);
+			for (i = slot + 1; i < leaf->header.nritems; i++)
+				leaf->items[i].offset += dsize;
+			memmove(leaf->items + slot, leaf->items + slot + 1,
+				sizeof(struct item) *
+				(leaf->header.nritems - slot - 1));
+		}
+		leaf->header.nritems -= 1;
+		if (leaf->header.nritems == 0) {
+			free(leaf);
+			del_ptr(root, &path, 1);
+		} else {
+			if (slot == 0)
+				fixup_low_keys(&path, &leaf->items[0].key, 1);
+			if (leaf_space_used(leaf, 0, leaf->header.nritems) <
+			    LEAF_DATA_SIZE / 4) {
+				/* push_leaf_left fixes the path.
+				 * make sure the path still points to our leaf
+				 * for possible call to del_ptr below
+				 */
+				slot = path.slots[1];
+				push_leaf_left(root, &path, 1);
+				path.slots[1] = slot;
+				if (leaf->header.nritems == 0) {
+					free(leaf);
+					del_ptr(root, &path, 1);
+				}
+			}
+		}
+		return 0;
+	}
+
+```
 
