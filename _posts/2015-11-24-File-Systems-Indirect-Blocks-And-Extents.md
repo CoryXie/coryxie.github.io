@@ -79,3 +79,4 @@ This blog entry is mostly an edit of the following sources, credits should go to
 
 * "Understanding Indirect Blocks in Unix File Systems" from [https://digital-forensics.sans.org/blog/2008/12/24/understanding-indirect-blocks-in-unix-file-systems](https://digital-forensics.sans.org/blog/2008/12/24/understanding-indirect-blocks-in-unix-file-systems)
 * "Ext4: The Next Generation of Ext2/3 Filesystem" from [http://www.cs.loyola.edu/~binkley/466/ext4-slides.pdf](http://www.cs.loyola.edu/~binkley/466/ext4-slides.pdf)
+* "An analysis of Ext4 for digital forensics" from [http://www.dfrws.org/2012/proceedings/DFRWS2012-13.pdf](http://www.dfrws.org/2012/proceedings/DFRWS2012-13.pdf)
