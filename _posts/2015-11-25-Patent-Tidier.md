@@ -56,6 +56,8 @@ With all these problems, I still love to search patent databases to read for tec
 
 * Allow users to send patent information to user configured email address (with a Blog entry added on [www.justsmart.mobi](www.justsmart.mobi)). Of course, this feature has to be expanded for actual usage.
 
+<img src="{{ site.baseurl }}/images/2015-11-25-1/config-extension.png" alt="Patent Tidier Config Extension">
+
 # Expected Features
 
 * The emailing and blogging features may need to be expanded further, becasue I have only done all the above list in two weeks of offline hours, these are really some prototypes to born such features.
