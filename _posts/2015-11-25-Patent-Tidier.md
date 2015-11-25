@@ -17,7 +17,7 @@ There are a lot of ways for people to learn somthing, by reading books, reading 
 
 # Problems of Patent Databases
 
-There are a several web sites with patent databases, [Google Patents](https://www.google.com/?tbm=pts&gws_rd=ssl) and [Lens](https://www.lens.org/lens/) are the ones I recommend, although [USPTO](http://www.uspto.gov/) . However, a common problem of these databases is that the patent documentation is not friendly for reading. Oh, did you see the `Lens.org` search box in each post of this blogging site?
+There are a several web sites with patent databases, [Google Patents](https://www.google.com/?tbm=pts&gws_rd=ssl) and [Lens](https://www.lens.org/lens/) are the ones I recommend, although [USPTO](http://www.uspto.gov/) is also sometimes visited by me. However, a common problem of these databases is that the patent documentation is not friendly for reading. Oh, did you see the `Lens.org` search box in each post of this blogging site?
 
 For example, I hope to read it like a book or web site articale, with the accompany images embedded just around the text describing the images. However, almost all patents are created with images separated from descriptions. Google Patents site is *kind enough* to provide these images (if avaiable) as a list of clickable thumbnails, allow people to enlarge the images to see details if they want to. However, asking the readers to go up and down, cliking here and there, is really annoying and distracting for knowledge learning purposes. Even if you printed out the patent PDF, you don't want to look back often while reading a piece of description with "refering to FIG.2", "block 202",..., etc. 
 
