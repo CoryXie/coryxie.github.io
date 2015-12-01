@@ -197,7 +197,7 @@ The library supports the following operations:
 
 <img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-lib-libnvpair-sources.png" alt="ZFS-FUSE libnvpair Library Sources">
 
-* Library `libsolcompat` implements or translates all necessary Solaris-specific functions into glibc functions.
+* Library `libsolcompat` implements or translates all necessary Solaris user space specific functions into glibc functions.
 
 This `libsolcompat` makes all `#include`s to be exactly the same between the original ZFS source files and the Linux port.
 
@@ -225,6 +225,89 @@ For example, the `libsolcompat` has a `src/lib/libsolcompat/include/string.h`, w
 
 <img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-lib-libsolcompat-sources-3.png" alt="ZFS-FUSE libsolcompat Library Sources 3">
 
-* Daemon `zfs-fuse`
+* Library `libsolkerncompat` implements or translates all necessary Solaris kernel space specific functions into glibc functions.
+
+The `libsolkerncompat` library implements or translates the necessary OpenSolaris kernel code to make the `ZPL` work. This library will also be necessary in order to use the original `zfs_ioctl.c` implementation, since it uses some kernel `VFS` (Virtual File System) operations, along with other things. A new `zfs_context.h` was also created or (more likely) the existing OpenSolaris `zfs_context.h` was factored out to `libsolkerncompat`.
+
+Note that the `ZPL` (ZFS POSIX Layer) runs at a high level, taking instruction from the OS on I/O requests. Below that is the `DMU` (Data Management Unit) that takes those instructions and translates them into transaction batches. Rather than requesting data blocks and sending single write requests, ZFS batches these into object-based transactions that can be optimized before any disk activity occurs.
+
+Once this is done, the batches are handed off to the `SPA` (Storage Pool Allocator) to schedule and aggregate the raw I/O. The `copy-on-write` basis of I/O transactions, coupled with checksums performed on a per block basis, precludes the need for journaling. An abrupt power loss will be recoverable at any point. 
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-lib-libsolkerncompat-sources-1.png" alt="ZFS-FUSE libsolkerncompat Library Sources 1">
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-lib-libsolkerncompat-sources-2.png" alt="ZFS-FUSE libsolkerncompat Library Sources 2">
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-lib-libsolkerncompat-sources-3.png" alt="ZFS-FUSE libsolkerncompat Library Sources 3">
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-lib-libsolkerncompat-sources-4.png" alt="ZFS-FUSE libsolkerncompat Library Sources 4">
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-lib-libsolkerncompat-sources-5.png" alt="ZFS-FUSE libsolkerncompat Library Sources 5">
+
+* Library `libumem` is a library used to detect memory management bugs in applications.
+
+`Libumem` is based on the Slab allocator concept. Libumem is available as a standard part of Solaris from Solaris 9 Update 3 onwards. 
+
+Functions in this library provide fast, scalable object-caching memory allocation with multithreaded application support. In addition to the standard `malloc()` family of functions and the more flexible `umem_alloc()` family, `libumem` provides powerful object-caching services as described in `umem_cache_create()`.
+
+Getting started with `libumem` is easy; just set `LD_PRELOAD` to "libumem.so" and any program executed will use `libumem`'s `malloc()` and `free()` (or `new` and `delete`). This slab allocator is designed for systems with many threads and many CPUs. Memory allocation with naive allocators can be a serious bottleneck.
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-lib-libumem-sources.png" alt="ZFS-FUSE libumem Library Sources">
+
+* Library `libuutil` is a library of userland utilities originating from OpenSolaris.
+
+This library provides both a doubly linked-list implementation and a AVL tree implementation. This has been a private library best known as a core component for `ZFS` and `SMF`.
+
+The performance is considered excellent. As this has always been a private library, it is not well documented and there is no man page for it. The best documentation is located in the source code and reading OpenSolaris/Illumos `ZFS` and `SMF` sources will help as well.
+
+For example, the list implementation is mostly located in `src/lib/libuutil/common/uu_list.c`.
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-lib-libuutil-sources.png" alt="ZFS-FUSE libuutil Library Sources">
+
+* Library `libzfs` is used by the `zfs` and `zpool` administration tools to communicate with ZFS code in the kernel.
  
+This communication occurs . This library provides a unified, object-based mechanism  for accessing and processing storage pool and file system. The underlying mechanism which communicate with the kernel implements as `ioctl()` syscalls on `/dev/zfs`. It contains the following files:
+
+ > - libzfs_dataset.c	Key interfaces for processing data sets
+ > - libzfs_pool.c	Primary interfaces for processing storage pool
+ > - libzfs_changelist.c	Attribute change utility
+ > - libzfs_config.c	Read and process the storage pool configuration information
+ > - libzfs_graph.c	Build a list of related data collection
+ > - libzfs_import.c	Search and import storage pool
+ > - libzfs_mount.c	Mount, unmount and share datasets
+ > - libzfs_status.c	The storage pool state linked to the FMA Knowledge Base
+ > - libzfs_util.c	Other routines
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-lib-libzfs-sources.png" alt="ZFS-FUSE libzfs Library Sources">
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-lib-libzfscommon-sources-1.png" alt="ZFS-FUSE libzfscommon Library Sources 1">
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-lib-libzfscommon-sources-2.png" alt="ZFS-FUSE libzfscommon Library Sources 2">
+
+* Library `libzpool` contains the userland port of the `SPA` (Storage Pool Allocator) and `DMU` (Data Management Unit) code.
+
+ZFS file system ships with a userspace testing library, `libzpool`. In addition to kernel interface emulation routines, `libzpool` consists of the Data Management Unit and Storage Pool Allocator components of ZFS compiled from the kernel sources. The `ztest` program plugs directly to these components.
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-lib-libzpool-sources-1.png" alt="ZFS-FUSE libzpool Library Sources 1">
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-lib-libzpool-sources-2.png" alt="ZFS-FUSE libzpool Library Sources 2">
+
+* Core `zfs-fuse` FUSE code
+
+FUSE is a mechanism that allows you to implement file systems in user space without kernel code (other than the FUSE kernel module and existing file system code). The module provides a bridge from the kernel file system interface to user space for user and file system implementations. 
+
 `zfs-fuse` is the main `zfs-fuse` daemon and must be running at all times. It should be run with root privileges.
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-core-fuse-sources.png" alt="ZFS-FUSE Core FUSE Sources">
+
+We can install zfs-fuse on Ubuntu with the following command:
+
+ > - sudo apt-get install zfs-fuse
+
+This command line install ZFS-FUSE and all other dependent packages as well as performing the necessary setup for the new packages and starting the zfs-fuse daemon.
+
+# References
+
+* "Run ZFS on Linux" from [IBM DeveloperWorks](http://www.ibm.com/developerworks/library/l-zfs/).
+* "ZFS-FUSE source code" from [GitHub](https://github.com/zfs-fuse/zfs-fuse).
+* "Oracle ZFS commands" from [Oracle](http://docs.oracle.com/cd/E23824_01/html/821-1462/toc.html).
+
