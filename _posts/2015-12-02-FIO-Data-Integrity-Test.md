@@ -13,14 +13,15 @@ comments: true
 featured: true
 ---
 
+Data integrity is a fundamental aspect of storage security and reliability. With the advent of network storage and new technology trends that result in new failure modes for storage, interesting challenges arise in ensuring data integrity. A minor integrity violation, when not detected by the higher level software on time, could cause further loss of data. For example, a bit-flip while reading a file system inode bitmap could cause the file system to overwrite an important file. Therefore, prompt detection of integrity violations is vital for the reliability and safety of the stored data. The Flexible I/O Tester (`fio`) can be used to test data integrity/retention. This blog post tries to record some mailing list reading when I was studying the topic of *Data Integrity Verification*.
 
-The Flexible I/O Tester (fio) can be used to test for data integrity/retention as follows.
+`fio` is an I/O tool meant to be used both for benchmark and stress/hardware verification. It has support for 19 different types of I/O engines (sync, mmap, libaio, posixaio, SG v3, splice, null, network, syslet, guasi, solarisaio, and more), I/O priorities (for newer Linux kernels), rate I/O, forked or threaded jobs, and much more. It can work on block devices as well as files. `fio` accepts job descriptions in a simple-to-understand text format. Several example job files are included. `fio` displays all sorts of I/O performance information, including complete IO latencies and percentiles. `fio` is in wide use in many places, for both benchmarking, QA, and verification purposes. It supports Linux, FreeBSD, NetBSD, OpenBSD, OS X, OpenSolaris, AIX, HP-UX, Android, and Windows.
 
 # Problem
 
-Some one was [wondering](http://www.spinics.net/lists/fio/msg01933.html) about the correct way to perform a data integrity check while using a high stress scenario with fio.
+Someone called *Ruvinsky Konstantin* was [wondering](http://www.spinics.net/lists/fio/msg01933.html) about the correct way to perform a data integrity check while using a high stress scenario with `fio`.
 
-* Scenario 1: File system, Could the following command be used for data integrity check of IO on device with FS?
+* Scenario 1: File system, could the following command be used for data integrity check of IO on device with FS?
 
 ```console
 	
@@ -28,20 +29,20 @@ Some one was [wondering](http://www.spinics.net/lists/fio/msg01933.html) about t
 
 ```
 
-I got the message that "Multiple writers may overwrite blocks that belong to other jobs. This can cause verification failures."
+He got the message that "Multiple writers may overwrite blocks that belong to other jobs. This can cause verification failures."
 
-In the fio man pages is written: 
+In the fio man pages, it is written: 
 
 	filename=str 	Fio normally makes up a filename based on the job name,
 	            	thread number, and file number. If you want to share
 	            	files between threads in a job or several jobs, specify
 	            	a filename for each of them to override the default
 
-Actually, fio creates 64 files and according to man pages every thread is writing to its file. Since `-iodepth=1` (default) why should there be a problem with multiple writers even in the case of async ioengine?
+Actually, `fio` creates 64 files and according to man pages every thread is writing to its file. Since `-iodepth=1` (default) why should there be a problem with multiple writers even in the case of async ioengine?
 
-If this is not correct, can someone suggest a data integrity check command in multithreaded fio run for devices with FS?
+He then asked, "If this is not correct, can someone suggest a data integrity check command in multithreaded `fio` run for devices with FS?".
 
-* Scenario 2: RAW device, Could the flag `--lockfile=readwrite` in the following fio command solve the problem of "Multiple writers may overwrite blocks that belong to other jobs"?
+* Scenario 2: RAW device, could the flag `--lockfile=readwrite` in the following fio command solve the problem of "Multiple writers may overwrite blocks that belong to other jobs"?
 
 ```console
 
@@ -49,40 +50,47 @@ If this is not correct, can someone suggest a data integrity check command in mu
 
 ```
 
-In the fio man pages is written: 
+In the `fio` man pages, it is written: 
 
 	lockfile=readwrite      Read-write locking on the file. Many
 	                        readers may access the file at the
 	                        same time, but writes get exclusive
 	                        access.
 
-Taking into account that that `iodepth=1` and only one thread can write in a given time, one can suppose that it solves the problem of blocks overwrite since it looks similar to one threaded writer, isn't it?
+Taking into account that `iodepth=1` and only one thread can write in a given time, one can suppose that it solves the problem of blocks overwrite since it looks similar to one threaded writer, isn't it?
 
-If this is not correct, can someone explain why and suggest a data integrity check command in multithreaded fio run for raw devices?
+He then asked once again, "If this is not correct, can someone explain why and suggest a data integrity check command in multithreaded fio run for raw devices?". 
+
+The above email was not answered by anyone in the `fio` mailing list, but it does not mean no one cared about this issue. *Grant Grundler* who has been working on IO subsystems since the mid 1980s, initiated some enhancments to Storage Data Integrity Testing on `fio`. He instructed his intern called *Juan Casse* to work on this topic.
 
 # Design
 
-The requirements for using FIO to do Storage Data Integrity testing can be summarized below:
+First, *Grant Grundler* sent out an email to the `fio` maintainer *Jens Axboe* and started the *Desigh Phase* of this enhancment project. 
 
-* verify data written to storage is available and correct
-* log writes (save a map) so we can repeatedly verify writes at a later date (weeks or months later)
+According to the email threads, *Grant Grundler* summarized the requirements for using `fio` to do Storage Data Integrity Testing as below:
 
-In fact fio has `axmap` to log writes, but prefer `lfsr` (Linear Feedback Shift Register) to reproduce data for
-verification; fio supports this with `random_generator=lfsr`.
+* Verify data written to storage is available and correct.
 
-* provide some "bread crumbs" for debugging when data is NOT correct. (Not available typically will result in reported errors). We want four pieces of data for bread crumbs:
+In fact, `fio` had some basic verify features before 2013 when *Grant Grundler* initiated this enhancment project, which should have matched this requirement.
+
+* Log writes (save a map) so we can repeatedly verify writes at a later date (weeks or months later).
+
+In fact `fio` has `axmap` to log writes, but *Jens Axboe* had preference to `lfsr` (Linear Feedback Shift Register) to reproduce data for verification; `fio` supports this with `random_generator=lfsr`. *Jens Axboe* made a note that `lfsr` (Linear Feedback Shift Register) is basically a way to generate a "random" sequence of numbers that are guaranteed not to repeat until the cycle is repeated. With this you never have to do on-the-side tracking to avoid overlaps or overwrites.
+
+* Provide some "bread crumbs" for debugging when data is NOT correct. (Not available typically will result in reported errors). 
+
+*Grant Grundler* stated four pieces of data for this "bread crumbs":
 
  >- timestamp
  >- LBA written (e.g. if it's a partition, that means the offset into the partition)
- >- magic number for that test run (think of it as a GUID - verifies the block was written by fio)
+ >- magic number for that test run (think of it as a GUID - verifies the block was written by `fio`)
  >- generation number in the case that we rewrite an LBA - so we can detect stale data
 
-Note that we want `fio` to check for stale data between multiple writes, to do this we would like to add a generation number, which counts the number of times the same block has been written. In fact, fio has `unsigned short numberio`, but it was not initially used as a generation number. Given the LFSR seed, one could determine the
-generation number. So perhaps add the LSFR seed value to the data structure so that gets written with each test run many many times too. Later, when we validate the drive, we can determine generation number and confirm the value is correct that was read from media. All of this needs to be implemented.
+Note that we want `fio` to check for stale data between multiple writes, to do this we would like to add a generation number, which counts the number of times the same block has been written. In fact, fio has `unsigned short numberio` in its `struct vhdr_meta` for `verify=meta` mode at the time of that email thread, but it was not initially used as a strict generation number. 
 
-In fio `meta` verify mode, there is actually already a timestamp there (sec + usec), and there's the notion of a generation number as well (it includes what number write this was).
+Also, in fio `meta` verify mode, there was actually already a timestamp there (sec + usec) in `struct vhdr_meta`, besides the notion of a generation number in `unsigned short numberio` (it includes what number write this was).
 
-The structure looks like this:
+The `struct vhdr_meta` structure looked like this at that time of the discussion:
 
 ```c
 
@@ -97,7 +105,7 @@ The structure looks like this:
 
 ```
 
-Note that the above `struct vhdr_meta` was moved into generic verify header structure in latest fio source tree.
+Note that the above `struct vhdr_meta` was moved into generic verify header structure in latest `fio` source tree. But the same constructs are still the same.
 
 ```c
 
@@ -121,18 +129,25 @@ Note that the above `struct vhdr_meta` was moved into generic verify header stru
 
 ```
 
-* verify data retention: we wanted "verify" to be an option to the "read" workload mix. 
+* Verify data retention: we wanted the "verify" to be an option to the "read" workload mix. 
  
-So not necessarily all data that gets written will get verified "during" the write workload. The reason is performance statistics need to be as consistent as possible without "verify" in a mixed read/write workload. Fio already supports this kind of usage. Simply do the write workload with `do_verify=0`, then do a similar read workload with `do_verify=1` and the same verify checksum etc settings. 
+So not necessarily all data that gets written will get verified "during" the write workload. The reason is that performance statistics needs to be as consistent as possible without "verify" in a mixed read/write workload. *Jens Axboe* pointed out that `fio` already supported this kind of usage at that time of the discussion. Simply do the write workload with `do_verify=0`, then do a similar read workload with `do_verify=1` and the same verify checksum settings, etc. 
 
-To verify everything that was written or trimmed, we can invoke fio again (think autotest invoking fio twice per test run) to check for retention. And then invoke fio many more times while the device is getting baked in a thermal chamber. In fact, trim verification can be done if the device supports persistent and guaranteed zero return on a completed trim by `trim_verify_zero` (Verify that trim/discarded blocks are returned as zeroes). If that isn't set, trimmed regions are simply ignored for a verify.
+To verify everything that was written or trimmed, we can invoke `fio` again (think autotest invoking `fio` twice per test run) to check for retention. And then invoke fio many more times while the device is getting baked in a thermal chamber. *Jens Axboe* pointed out once again, that in fact, trim verification can be done if the device supports persistent and guaranteed zero return on a completed trim by `trim_verify_zero` (Verify that trim/discarded blocks are returned as zeroes). If that isn't set, trimmed regions are simply ignored for a verify.
 
-This should be sufficient for data retention testing as well: If you write `do_verify=0` and then 3 months later read `do_verify=1`.
+This should be sufficient for data retention testing as well: If you write with `do_verify=0` and then 3 months later read with `do_verify=1`.
 
-* work on any block storage device (ie no knowledge of specific device geometry or flash vs magnetic vs optical or removable vs built-in - some 'workloads' might be geared for specific types of storage)
-* specify workload the same way fio does (multi-threaded, async, random vs seq, read vs write mix, etc)
-* collect same performance statistics that fio does (latency histograms in particular)
+* Work on any block storage device (ie no knowledge of specific device geometry or flash vs magnetic vs optical or removable vs built-in - some 'workloads' might be geared for specific types of storage).
 
+The original `fio` should have matched this requirement.
+
+* Specify workload the same way `fio` does (multi-threaded, async, random vs seq, read vs write mix, etc).
+
+The original `fio` should have matched this requirement.
+
+* Collect same performance statistics that fio does (latency histograms in particular).
+
+The original `fio` should have matched this requirement.
 
 Since these are destructive tests, we can expect the primary target "audience" is anyone working on Storage HW or wants to confirm Storage HW is operating correctly before deploying $$$ worth of HW.
 
@@ -140,9 +155,11 @@ BTW, to eventually support adding "trim/discard command" testing into the mix, w
 
 # Implementation
 
+*Juan Casse* followed *Grant Grundler* by sending out another email thread, giving out more details about their intended implementation.
+
 ## Phase 1: Write data to storage device
 
-Run fio with a job file specifying the following options.
+Run `fio` with a job file specifying the following options.
 
 * `readwrite`=
 
@@ -156,26 +173,24 @@ Run fio with a job file specifying the following options.
 
 * `runtime=1` or any other number of seconds (specifies the duration of the fio run)
 
-* `time_based` (tells fio to run based on time rather than iops)
+* `time_based` (tells `fio` to run based on time rather than iops)
 
-* `verify=meta` (adds block number, `numberio` and `timestamp` to the block header)
+* `verify=meta` (adds `block number`, `numberio` and `timestamp` to the block verify header)
 
 * `verify_pattern=0xffffffffffffffff` or any other pattern (fills the rest of the block with the specified pattern)
 
 * `verify_dump=1` (writes to a file the data read from disk and the data that was expected, in case of data corruption)
 
-* `continue_on_error=verify` (allows fio to continue even if corrupted blocks are found, otherwise
-fio will stop execution on the first corrupted block)
+* `continue_on_error=verify` (allows `fio` to continue even if corrupted blocks are found, otherwise
+`fio` will stop execution on the first corrupted block)
 
 * `random_generator=lfsr` (use `lfsr` as the random number generator)
 
-Note `lfsr` (Linear Feedback Shift Register) is basically a way to generate a "random" sequence of numbers that are guaranteed not to repeat until the cycle is repeated. Then you never have to do on-the-side tracking to avoid overlaps or overwrites.
-
 ## Phase 2: Verify data
 
-The fio verification modes checksum both the stored header, as well as the actual contents. Fio checksums the verify header separately with the contents. If the verify header is good, we can check the actual data. If the actual data is not good, we can recreate the original content and compare with what is on disk. That gives us a pretty good idea of what was destroyed and how. But it does not have the required bits for real retention testing, like timestamp and/or sequence. That could be added to the `verify_header` structure, or it could be a specific part of e.g the meta verify. The latter has the offset written already, for instance.
+The `fio` verification modes checksum both the stored header, as well as the actual contents (in fact `fio` checksums the verify header separately with the contents). If the verify header is good, we can check the actual data. If the actual data is not good, we can recreate the original content (based on `verify_pattern`) and compare with what is on disk. That gives us a pretty good idea of what was destroyed and how. But as *Jens Axboe* stated, it does not have the required bits for real retention testing, like timestamp and/or sequence. That could be added to the `verify_header` structure, or it could be a specific part of e.g the meta verify. The latter has the offset written already, for instance.
 
-Recall that we mentioned adding a "generation" number to the block header data? Well, we think we can use the existing `numberio` instead.
+Recall that we mentioned adding a "generation number" to the block header data? Well, *Juan Casse* updated the `fio` source code to use the existing `numberio` instead.
 
 Run fio with the same options as before plus specifying a new option:
 
@@ -185,21 +200,22 @@ When this option is given in the job file, fio will "replay" the workload (witho
 
 The `numberio` is incremented each time we read or write, so it can easily be computed going backwards by decrementing its value.
 
-How is the block offset computed from the `lfsr`? Do you see any problems trying to compute the offset going backwards with the `lfsr`?
+*Juan Casse* asked two questions to *Jens Axboe* but got no reply from *Jens Axboe*: How is the block offset computed from the `lfsr`? Do you see any problems trying to compute the offset going backwards with the `lfsr`?
 
 One way to perform the data integrity check is to verify each block in order of block number (offset). For each block number, run the `lfsr` backwards starting from the end until we hit the block number. We then compare the `numberio` obtained by running the `lfsr` backwards with the one read from storage.
 
-In the fio code, the function `do_io()` performs the workload specified, whether it be writes, reads and writes, or just reads. The function `do_verify()` is executed after `do_io()` only when the workload does any writes. If the workload does only reads, `do_verify()` is not executed. This function reads the blocks back and compares the
+In the `fio` code, the function `do_io()` performs the workload specified, whether it be writes, reads and writes, or just reads. The function `do_verify()` is executed after `do_io()` only when the workload does any writes. If the workload does only reads, `do_verify()` is not executed. This function reads the blocks back and compares the
 offset (block number). I already have code in place that checks for `numberio` as well.
 
 However, if the job file specifies to run based on time rather than total number of bytes (setting `runtime=int` and `time_based`), then `do_verify()` is not performed. We would also need to run `do_verify()` in this case to make sure that the correct data was indeed written to storage.
 
-Note: fio needs to be run based on time if we want `numberio` incremented when a block is rewritten. If we set fio to run a number of iterations instead (by specifying `loops=int`), the same `numberio` will be written every time the block is rewritten.
+Note: `fio` needs to be run based on time if we want `numberio` incremented when a block is rewritten. If we set fio to run a number of iterations instead (by specifying `loops=int`), the same `numberio` will be written every time the block is rewritten.
 
 # References
 
-This blog entry is mostly an edit of the following sources, credits should go to these authors!
+This blog entry is mostly an edit based on the following sources, credits should go to these authors!
 
 * http://www.spinics.net/lists/fio/msg02256.html
 * http://www.spinics.net/lists/fio/msg02341.html
 * http://www.spinics.net/lists/fio/msg01933.html
+* Also [*Ensuring Data Integrity in Storage: Techniques and Applications*](https://www.fsl.cs.sunysb.edu/docs/integrity-storagess05/integrity.html) provides extensive analysis for Data Integrity issues.
