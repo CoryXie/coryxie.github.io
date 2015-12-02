@@ -625,7 +625,7 @@ As we have seen in `insert_item()`, when a leaf node does not have enough space 
 
 The most complicated code in this function is the `push_leaf_left()`, which pushes some data in the path leaf to the left, trying to free up at least `data_size` bytes, it returns zero if the push worked, nonzero otherwise. This is described in detail in the next subsection **Pushing Left for Items in Leaf Node**.
 
-If the `push_leaf_left()` fails, it means a new leaf should be inserted. It allocates a `struct leaf` and marking it `right`.
+If the `push_leaf_left()` fails, it means a new leaf should be inserted. It allocates a `struct leaf` and marking it `right`. Then it determines if there is enough room for the new data item to insert `right` on the `slot` popsition.
 
 ## Pushing Left for Items in Leaf Node
 
