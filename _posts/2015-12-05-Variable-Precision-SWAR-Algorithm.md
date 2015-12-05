@@ -60,7 +60,7 @@ There is another variation for the "Population Count (Ones Count) Algorithm".
 
 *Zhi-Jun* made a table to describe the above algorithm (covering the 16 bit version).
 
-<img src="{{ site.baseurl }}/images/2015-12-05-1/popcount-steps-table.png" alt="Population Count SWAR Algorithm Steps">
+<img src="{{ site.baseurl }}/images/2015-12-05-2/popcount-steps-table.png" alt="Population Count SWAR Algorithm Steps">
 
 In explanation of the `ones32()` function, Professor *Hank Dietz* also stated:
 
