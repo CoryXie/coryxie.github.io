@@ -305,6 +305,28 @@ We can install zfs-fuse on Ubuntu with the following command:
 
 This command line install ZFS-FUSE and all other dependent packages as well as performing the necessary setup for the new packages and starting the zfs-fuse daemon.
 
+# Internal Dependencies
+
+The following graphics can show the internal dependencies between the 3 major top level directories of ZFS-FUSE project.
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-dependencies-cmd.png" alt="ZFS-FUSE cmd Directory Dependencies">
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-dependencies-lib.png" alt="ZFS-FUSE lib Directory Dependencies">
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-dependencies-zfs-fuse.png" alt="ZFS-FUSE zfs-fuse Directory Dependencies">
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-dependencies-libsolcompat.png" alt="ZFS-FUSE libsolcompat Directory Dependencies">
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-dependencies-libsolkerncompat.png" alt="ZFS-FUSE libsolkerncompat Directory Dependencies">
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-dependencies-libumem.png" alt="ZFS-FUSE libumem Directory Dependencies">
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-dependencies-libzfs.png" alt="ZFS-FUSE libzfs Directory Dependencies">
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-dependencies-libzfscommon.png" alt="ZFS-FUSE libzfscommon Directory Dependencies">
+
+<img src="{{ site.baseurl }}/images/2015-12-01-1/zfs-fuse-dependencies-libzpool.png" alt="ZFS-FUSE libzpool Directory Dependencies">
+
 # References
 
 * "Run ZFS on Linux" from [IBM DeveloperWorks](http://www.ibm.com/developerworks/library/l-zfs/).
