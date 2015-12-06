@@ -17,7 +17,7 @@ The population count of a binary integer value x is the number of one bits in th
 
 ## Population Count (Ones Count) SWAR Algorithm
 
-[The Aggregate Magic Algorithms](http://aggregate.ee.engr.uky.edu/MAGIC) site maintains "Population Count (Ones Count)" algorithm like below using a `variable-precision SWAR algorithm` to perform a `tree reduction` adding the bits in a 32-bit value:
+On the [The Aggregate Magic Algorithms](http://aggregate.ee.engr.uky.edu/MAGIC) site, Professor *Hank Dietz* maintains "Population Count (Ones Count)" algorithm like below using a `variable-precision SWAR algorithm` to perform a `tree reduction` adding the bits in a 32-bit value:
 
 ```c
 
@@ -51,16 +51,78 @@ There is another variation for the "Population Count (Ones Count) Algorithm".
 		x = (x & 0x33333333) + ((x >> 2) & 0x33333333);
 		x = (x & 0x0f0f0f0f) + ((x >> 4) & 0x0f0f0f0f);
 		x = (x & 0x00ff00ff) + ((x >> 8) & 0x00ff00ff);
-		x = (x & 0x0000ffff) + ((x >> 16) &0x0000ffff);
+		x = (x & 0x0000ffff) + ((x >> 16)& 0x0000ffff);
 
 		return x;
 	}
 
 ```
 
-*Zhi-Jun* made a table to describe the above algorithm (covering the 16 bit version).
+[*Zhi-Jun*](https://zhjxue.wordpress.com/tag/%E7%AE%97%E6%B3%95-%E7%BB%9F%E8%AE%A1-hamming-weight/) made a table to describe the above algorithm (covering the 16 bit version).
 
 <img src="{{ site.baseurl }}/images/2015-12-05-2/popcount-steps-table.png" alt="Population Count SWAR Algorithm Steps">
+
+The above steps can also be visually viewed by the following Python shell interactions:
+
+```console
+
+	>>> x=0b0110110010111010
+	>>> bin(x)
+	'0b110110010111010'
+	>>> hex(x)
+	'0x6cba'
+	>>> x = (x & 0x55555555) + ((x >> 1) & 0x55555555);
+	>>> bin(x)
+	'0b101100001100101'
+	>>> hex(x)
+	'0x5865'
+	>>> x = (x & 0x33333333) + ((x >> 2) & 0x33333333);
+	>>> bin(x)
+	'0b10001000110010'
+	>>> hex(x)
+	'0x2232'
+	>>> x = (x & 0x0f0f0f0f) + ((x >> 4) & 0x0f0f0f0f);
+	>>> bin(x)
+	'0b10000000101'
+	>>> hex(x)
+	'0x405'
+	>>> x = (x & 0x00ff00ff) + ((x >> 8) & 0x00ff00ff);
+	>>> bin(x)
+	'0b1001'
+	>>> hex(x)
+	'0x9'
+	>>> x = (x & 0x0000ffff) + ((x >> 16)& 0x0000ffff);
+	>>> bin(x)
+	'0b1001'
+	>>> hex(x)
+	'0x9'
+	>>> 
+
+```
+
+And here is another example:
+
+```console
+
+	>>> x=0x10101010
+	>>> x = (x & 0x55555555) + ((x >> 1) & 0x55555555);
+	>>> hex(x)
+	'0x10101010'
+	>>> x = (x & 0x33333333) + ((x >> 2) & 0x33333333);
+	>>> hex(x)
+	'0x10101010'
+	>>> x = (x & 0x0f0f0f0f) + ((x >> 4) & 0x0f0f0f0f);
+	>>> hex(x)
+	'0x1010101'
+	>>> x = (x & 0x00ff00ff) + ((x >> 8) & 0x00ff00ff);
+	>>> hex(x)
+	'0x20002'
+	>>> x = (x & 0x0000ffff) + ((x >> 16) &0x0000ffff);
+	>>> hex(x)
+	'0x4'
+	>>> 
+
+```
 
 In explanation of the `ones32()` function, Professor *Hank Dietz* also stated:
 
@@ -152,6 +214,156 @@ Thus, the *highest* byte of the result ends up being the sum of:
 That is, the highest byte of `k * 0x01010101` ends up being the sum of the bitcounts of all the bytes of the input, i.e. the total bitcount of the 32-bit input number.  The final `>> 24` then simply shifts this value down from the highest byte to the lowest.
 
 **Ps.** This code could easily be extended to 64-bit integers, simply by changing the `0x01010101` to `0x0101010101010101` and the `>> 24` to `>> 56`.  Indeed, the same method would even work for 128-bit integers; 256 bits would require adding one extra shift / add / mask step, however, since the number 256 no longer quite fits into an 8-bit byte.
+
+## Other SWAR Style Algorithms
+
+### Leading Zero Count
+
+Some machines have had single instructions that count the number of leading zero bits in an integer; such an operation can be an artifact of having floating point normalization hardware around. Clearly, floor of base 2 log of `x` is `(WORDBITS-lzc(x))`. In any case, this operation has found its way into quite a few algorithms, so it is useful to have an efficient implementation:
+
+```c
+
+	unsigned int lzc(register unsigned int x)
+	{
+	        x |= (x >> 1);
+	        x |= (x >> 2);
+	        x |= (x >> 4);
+	        x |= (x >> 8);
+	        x |= (x >> 16);
+	        return(WORDBITS - ones32(x));
+	}
+
+```
+
+The conversion process of the above shit operation steps can be seen as below using Python shell:
+
+```console
+
+	>>> x=0x10000000
+	>>> hex(x)
+	'0x10000000'
+	>>> x|=(x>>1)
+	>>> hex(x)
+	'0x18000000'
+	>>> x|=(x>>2)
+	>>> hex(x)
+	'0x1e000000'
+	>>> x|=(x>>4)
+	>>> hex(x)
+	'0x1fe00000'
+	>>> x|=(x>>8)
+	>>> hex(x)
+	'0x1fffe000'
+	>>> x|=(x>>16)
+	>>> hex(x)
+	'0x1fffffff'
+	>>> x=(x & ~(x >> 1))
+	>>> hex(x)
+	'0x10000000'
+	>>> 
+
+```
+
+### Log2 of an Integer
+
+Given a binary integer value x, the floor of the base 2 log of that number efficiently can be computed by the application of two variable-precision SWAR algorithms. The first "folds" the upper bits into the lower bits to construct a bit vector with the same most significant 1 as x, but all 1's below it. The second SWAR algorithm is population count, defined elsewhere in this document. However, we must consider the issue of what the log2(0) should be; the log of 0 is undefined, so how that value should be handled is unclear. The following code for handling a 32-bit value gives two options: if LOG0UNDEFINED, this code returns -1 for log2(0); otherwise, it returns 0 for log2(0). For a 32-bit value:
+
+```c
+
+	unsigned int floor_log2(register unsigned int x)
+	{
+	        x |= (x >> 1);
+	        x |= (x >> 2);
+	        x |= (x >> 4);
+	        x |= (x >> 8);
+	        x |= (x >> 16);
+	#ifdef	LOG0UNDEFINED
+	        return(ones32(x) - 1);
+	#else
+		return(ones32(x >> 1));
+	#endif
+	}
+
+```
+
+Suppose instead that you want the ceiling of the base 2 log. The floor and ceiling are identical if x is a power of two; otherwise, the result is 1 too small. This can be corrected using the power of 2 test followed with the comparison-to-mask shift used in integer minimum/maximum. The result is:
+
+```c
+	
+	unsigned int log2(register unsigned int x)
+	{
+		register int y = (x & (x - 1));
+	
+			y |= -y;
+			y >>= (WORDBITS - 1);
+	        x |= (x >> 1);
+	        x |= (x >> 2);
+	        x |= (x >> 4);
+	        x |= (x >> 8);
+	        x |= (x >> 16);
+	#ifdef	LOG0UNDEFINED
+	        return(ones(x) - 1 - y);
+	#else
+			return(ones(x >> 1) - y);
+	#endif
+	}
+
+```
+
+### Next Largest Power of 2
+
+Given a binary integer value x, the next largest power of 2 can be computed by a SWAR algorithm that recursively "folds" the upper bits into the lower bits. This process yields a bit vector with the same most significant 1 as x, but all 1's below it. Adding 1 to that value yields the next largest power of 2. For a 32-bit value:
+
+```c
+
+	unsigned int nlpo2(register unsigned int x)
+	{
+	        x |= (x >> 1);
+	        x |= (x >> 2);
+	        x |= (x >> 4);
+	        x |= (x >> 8);
+	        x |= (x >> 16);
+	        return(x+1);
+	}
+
+```
+
+### Most Significant 1 Bit
+
+Given a binary integer value x, the most significant 1 bit (highest numbered element of a bit set) can be computed using a SWAR algorithm that recursively "folds" the upper bits into the lower bits. This process yields a bit vector with the same most significant 1 as x, but all 1's below it. Bitwise `AND` of the original value with the complement of the "folded" value shifted down by one yields the most significant bit. For a 32-bit value:
+
+```c
+
+	unsigned int msb32(register unsigned int x)
+	{
+	        x |= (x >> 1);
+	        x |= (x >> 2);
+	        x |= (x >> 4);
+	        x |= (x >> 8);
+	        x |= (x >> 16);
+	        return(x & ~(x >> 1));
+	}
+
+```
+
+### Least Significant 1 Bit
+
+This can be useful for extracting the lowest numbered element of a bit set. Given a 2's complement binary integer value `x`, `(x&-x)` is the least significant 1 bit (This was pointed-out by *Tom May*). The reason this works is that it is equivalent to `(x & ((~x) + 1))`; any trailing zero bits in `x` become ones in `~x`, adding 1 to that carries into the following bit, and `AND` with `x` yields only the flipped bit... the original position of the least significant 1 bit.
+
+Alternatively, since `(x&(x-1))` is actually `x` stripped of its least significant 1 bit, the least significant 1 bit is also `(x^(x&(x-1)))`.
+
+### Trailing Zero Count
+
+Given the **Least Significant 1 Bit** and **Population Count (Ones Count)** algorithms, it is trivial to combine them to construct a trailing zero count (as pointed-out by *Joe Bowbeer*):
+
+```c
+
+	unsigned int tzc(register int x)
+	{
+	        return (ones32((x & -x) - 1));
+	}
+
+```
 
 ## References
 
