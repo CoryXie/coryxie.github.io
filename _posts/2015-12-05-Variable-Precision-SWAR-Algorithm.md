@@ -38,6 +38,49 @@ On the [The Aggregate Magic Algorithms](http://aggregate.ee.engr.uky.edu/MAGIC) 
 
 ```
 
+The following is a Python shell process to show how the function works step by step.
+
+```console
+
+	>>> x=0b0110110010111010
+	>>> bin(x)
+	'0b110110010111010'
+	>>> hex(x)
+	'0x6cba'
+	>>> x -= ((x >> 1) & 0x55555555);
+	>>> bin(x)
+	'0b101100001100101'
+	>>> hex(x)
+	'0x5865'
+	>>> x = (((x >> 2) & 0x33333333) + (x & 0x33333333));
+	>>> bin(x)
+	'0b10001000110010'
+	>>> hex(x)
+	'0x2232'
+	>>> x = (((x >> 4) + x) & 0x0f0f0f0f);
+	>>> bin(x)
+	'0b10000000101'
+	>>> hex(x)
+	'0x405'
+	>>> x += (x >> 8);
+	>>> bin(x)
+	'0b10000001001'
+	>>> hex(x)
+	'0x409'
+	>>> x += (x >> 16);
+	>>> bin(x)
+	'0b10000001001'
+	>>> hex(x)
+	'0x409'
+	>>> y=(x & 0x0000003f)
+	>>> bin(y)
+	'0b1001'
+	>>> hex(y)
+	'0x9'
+	>>> 
+
+```
+
 ## Code Walk Through for Population Count SWAR Algorithm
 
 There is another variation for the "Population Count (Ones Count) Algorithm".
@@ -217,6 +260,8 @@ That is, the highest byte of `k * 0x01010101` ends up being the sum of the bitco
 
 ## Other SWAR Style Algorithms
 
+Professor *Hank Dietz* also maintains several other algorithms which are using SWAR to "fold" values in on integer variable in various of ways and get the results of several problems done.
+
 ### Leading Zero Count
 
 Some machines have had single instructions that count the number of leading zero bits in an integer; such an operation can be an artifact of having floating point normalization hardware around. Clearly, floor of base 2 log of `x` is `(WORDBITS-lzc(x))`. In any case, this operation has found its way into quite a few algorithms, so it is useful to have an efficient implementation:
@@ -280,7 +325,7 @@ Given a binary integer value x, the floor of the base 2 log of that number effic
 	#ifdef	LOG0UNDEFINED
 	        return(ones32(x) - 1);
 	#else
-		return(ones32(x >> 1));
+			return(ones32(x >> 1));
 	#endif
 	}
 
