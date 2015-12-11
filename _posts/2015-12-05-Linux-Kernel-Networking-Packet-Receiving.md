@@ -102,6 +102,12 @@ Data within the socket’s `receive buffer` are ready for delivery to the `user 
 Packet data is finally copied from the socket’s `receive buffer` to `user space` by data receiving process through socket-related receive system calls. The receiving process supplies a memory address and number of bytes to be transferred, either in a `struct iovec`, or as two parameters gathered into such a struct by the kernel. As mentioned above, all the TCP socket-related receive system calls result in the final calling of `tcp_recvmsg()`,
 which will copy packet data from socket’s buffers (`receive queue`, `prequeue`, `backlog queue`) through `iovec`. For UDP, all the socket-related receiving system calls result in the final calling of `udp_recvmsg()`. When `udp_recvmsg()` is called, data inside receive queue is copied through `iovec` to `user space` directly. 
 
+## Simplified Diagram of the Linux Networking Stack
+
+* http://www.linuxfoundation.org/images/1/1c/Network_data_flow_through_kernel.png
+
+<img src="{{ site.baseurl }}/images/2015-12-05-1/Network_data_flow_through_kernel.png" alt="Networking Data Flow Through Kernel">
+
 ## References
 
 This blog entry is mostly an edit based on the following sources, credits should go to these authors!
