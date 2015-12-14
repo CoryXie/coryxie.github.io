@@ -258,7 +258,75 @@ The `kernel/smp.c` has an exmaple usage of this API.
 
 # Doubly Linked List
 
-TODO
+The main structure of `Doubly Linked List` is defined in the [`include/linux/types.h`](https://github.com/torvalds/linux/blob/master/include/linux/types.h) as `struct list_head`.
+
+```c
+
+	struct list_head {
+	        struct list_head *next, *prev;
+	};
+
+```
+
+The `struct list_head` itself does not contain any extra pointer to the data, and it must be embedded in the data structure that wants to be `Doubly Linked`. A user should initialize an global instance of `struct list_head` as the head of the list with `LIST_HEAD()` macro, or this can be initialized dynamically with `INIT_LIST_HEAD()`.
+
+```c
+
+	#define LIST_HEAD_INIT(name) { &(name), &(name) }
+	
+	#define LIST_HEAD(name) \
+	        struct list_head name = LIST_HEAD_INIT(name)
+
+	static inline void INIT_LIST_HEAD(struct list_head *list);
+
+```
+
+Once the list head is initialized, we can use the following APIs to manipulate the list.
+
+```c
+
+	static inline void list_add(struct list_head *new, struct list_head *head);
+	static inline void list_add_tail(struct list_head *new, struct list_head *head);
+	static inline void list_del(struct list_head *entry);
+	static inline void list_replace(struct list_head *old,
+                                struct list_head *new);
+	static inline void list_replace_init(struct list_head *old,
+                                        struct list_head *new);
+	static inline void list_del_init(struct list_head *entry);
+	static inline void list_move(struct list_head *list, struct list_head *head);
+	static inline void list_move_tail(struct list_head *list,
+                                  struct list_head *head);
+	static inline int list_is_last(const struct list_head *list,
+                                const struct list_head *head);
+	static inline int list_empty(const struct list_head *head);
+	static inline int list_empty_careful(const struct list_head *head);
+	static inline void list_rotate_left(struct list_head *head);
+	static inline int list_is_singular(const struct list_head *head);
+	static inline void list_cut_position(struct list_head *list,
+                struct list_head *head, struct list_head *entry)；
+	static inline void list_splice(const struct list_head *list,
+                                struct list_head *head);
+	static inline void list_splice_tail(struct list_head *list,
+                                struct list_head *head);
+	static inline void list_splice_init(struct list_head *list,
+                                    struct list_head *head);
+	static inline void list_splice_tail_init(struct list_head *list,
+                                         struct list_head *head);
+
+```
+
+	static inline void __list_cut_position(struct list_head *list,
+                struct list_head *head, struct list_head *entry)；
+
+	static inline void __list_splice(const struct list_head *list,
+                                 struct list_head *prev,
+                                 struct list_head *next)；
+
+
+
+
+# Hash List
+
 
 # B+ Trees
 
