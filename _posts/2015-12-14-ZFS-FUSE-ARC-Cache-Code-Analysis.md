@@ -247,7 +247,7 @@ The following is the detailed flowchart.
 
 ## ARC Reclaim Thread
 
-The ARC reclaim thread is implemented in `arc_reclaim_thread()`, which wakes up every second (or sooner if signaled by the `arc_reclaim_thr_cv` conditional variable) and will attempt to reduce the size of the ARC to the target size. It calls `arc_kmem_reap_now()` to clean up the kmem caches, and `arc_adjust()` to resize the ARC lists. If `arc_shrink()` is called by `arc_kmem_reap_now()`, the target ARC size is reduced by `arc_shrink_shift` (or `needfree`), which means shrinking the ARC by 3%. If you plot the ARC size, you sometimes see these `arc_shrink()` steps appearing as teeth on a saw – a sharp drop followed by a gradual increase.
+The ARC reclaim thread is implemented in `arc_reclaim_thread()`, which wakes up every second (or sooner if signaled by the `arc_reclaim_thr_cv` conditional variable) and will attempt to reduce the size of the ARC to the "Target Size". It calls `arc_kmem_reap_now()` to clean up the kmem caches, and `arc_adjust()` to resize the ARC lists. If `arc_shrink()` is called by `arc_kmem_reap_now()`, the target ARC size is reduced by `arc_shrink_shift` (or `needfree`), which means shrinking the ARC by 3%. If you plot the ARC size, you sometimes see these `arc_shrink()` steps appearing as teeth on a saw – a sharp drop followed by a gradual increase.
 
 ```c
 
@@ -307,9 +307,60 @@ The ARC reclaim thread is implemented in `arc_reclaim_thread()`, which wakes up 
 
 ```
 
-The following is the detailed flowchart.
+ZFS ARC growing more than the "Target Size" is allowed, but `arc_reclaim_thread()` must eventually wake up to reduce the actual size to the "Target Size".
+
+The following is the detailed flowchart for `arc_reclaim_thread()` function.
 
 <img src="{{ site.baseurl }}/images/2015-12-14-1/ControlFlowGraph-arc_reclaim_thread.png" alt="ZFS-FUSE Control Flow Graph arc_reclaim_thread">
+
+### arc_shrink() reduces the ARC Target Size
+
+```c
+
+        void arc_shrink(void)
+        {
+        	if (arc_c > arc_c_min) {
+        		uint64_t to_free;
+        
+        #if 0
+        		to_free = MAX(arc_c >> arc_shrink_shift, ptob(needfree));
+        #else
+        		to_free = arc_c >> arc_shrink_shift;
+        #endif
+        		if (arc_c > arc_c_min + to_free)
+        			atomic_add_64(&arc_c, -to_free);
+        		else
+        			arc_c = arc_c_min;
+        
+        		atomic_add_64(&arc_p, -(arc_p >> arc_shrink_shift));
+        		if (arc_c > arc_size)
+        			arc_c = MAX(arc_size, arc_c_min);
+        		if (arc_p > arc_c)
+        			arc_p = (arc_c >> 1);
+        		ASSERT(arc_c >= arc_c_min);
+        		ASSERT((int64_t)arc_p >= 0);
+        	}
+        
+        	if (arc_size > arc_c)
+        		arc_adjust();
+        }
+
+```
+
+The `arc_shrink()` function reduces the arc target size by doing the following:
+
+* Firstly, `to_free` is calculated as follow: `to_free = arc_c >> arc_shrink_shift`.
+* Then it will guarantee that `to_free` will not reduce `target_size` to a value lower than the minimum target size.
+ 
+>- If the condition above is true, then "Target Size" `arc_c` is reduced by `to_free` (which means reducing the arc size by about 3.125%).
+>- If not, "Target Size" `arc_c` is set to the minimum target size `arc_c_min`.
+
+* And finally, if "Target Size" `arc_c` is smaller than the "Current Size" `arc_size`, `arc_adjust()` is called to do the actual work.
+
+
+The following is the detailed flowchart for `arc_shrink()` function:
+
+<img src="{{ site.baseurl }}/images/2015-12-14-1/ControlFlowGraph-arc_shrink.png" alt="ZFS-FUSE Control Flow Graph arc_shrink">
 
 ## ARC Eviction
 
