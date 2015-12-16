@@ -15,6 +15,12 @@ featured: true
 
 The ARC achieves a high cache hit rate by using multiple cache algorithms at the same time: most recently used (MRU) and most frequently used (MFU). Main memory is balanced between these algorithms based on their performance, which is known by maintaining extra metadata (in main memory) to see how each algorithm would perform if it ruled all of memory. Such extra metadata is held on `ghost lists`. The MRU + MFU lists refer to the data cached in main memory; the MRU ghost + MFU ghost lists consist of themselves only (the metadata) to track algorithm performance. The current version of the ZFS ARC splits the lists into separate data and metadata lists, and also has a list for anonymous buffers and one for L2ARC only buffers (which I added when I developed the L2ARC). This blog post tries to analyze the ZFS ARC from source code perspective.
 
+## ARC Data Structures
+
+The data structures used to maintain the ARC are `arc_buf_hdr_t` and `arc_buf_t`. These data structures are used to determine if a buffer is in ARC, and, if so, where (`mru`, `mfu`, `mru ghost`, `mfu ghost`, `l2arc`). (The ghost lists are used to determine when a `mru` or `mfu` cache is too small). But they do not identify what object the data/metadata holds. For this, the `dmu_buf_impl_t` structure (hereafter referred to as "`dbuf`" structures) can be used. Note that not everything in the ARC is mapped by `dbufs`.
+
+
+
 ## ARC Initialization
 
 The ARC Initialization is performed by calling `arc_init()`. It initializes the basic control variables, buffers, lists and locks, sets up stats reporting infrastructure, and starts an ARC Reclaim Thread. The code is listed below and we will talk about the various initialization operations after the code.
@@ -307,11 +313,83 @@ The ARC reclaim thread is implemented in `arc_reclaim_thread()`, which wakes up 
 
 ```
 
-ZFS ARC growing more than the "Target Size" is allowed, but `arc_reclaim_thread()` must eventually wake up to reduce the actual size to the "Target Size".
+ZFS ARC growing more than the "Target Size" is allowed, but `arc_reclaim_thread()` must eventually wake up to reduce the actual size to the "Target Size". Note that ZFS-FUSE currently disabled `arc_reclaim_needed()` by just returning 0, which makes `arc_reclaim_thread()` to force `arc_no_grow = FALSE` in the `else` condition. Then the follow on actions by the loop is just two things:
+
+1) If "actual total arc size" (`arc_size`) plus "glost list arc size" (`arc_mru_ghost->arcs_size + arc_mfu_ghost->arcs_size`) is larger than two times of "Target Size" (`arc_c`), then `arc_adjust()` is called to adjust (ie evict) cache contents to new sizes.
+
+2) If `arc_eviction_list` is not NULL, call `arc_do_user_evicts()` to remove the ARC buffers. Arc buffers may have an associated eviction callback function. This function will be invoked prior to removing the buffer (e.g. in `arc_do_user_evicts()`).  Note however that the data associated with the buffer may be evicted prior to the callback.  The callback must be made with *no locks held* (to prevent deadlock).  Additionally, the users of callbacks must ensure that their private data is protected from simultaneous callbacks from `arc_buf_evict()` and `arc_do_user_evicts()`.
 
 The following is the detailed flowchart for `arc_reclaim_thread()` function.
 
 <img src="{{ site.baseurl }}/images/2015-12-14-1/ControlFlowGraph-arc_reclaim_thread.png" alt="ZFS-FUSE Control Flow Graph arc_reclaim_thread">
+
+### `arc_adjust` 
+
+```c
+
+	static void arc_adjust(void)
+	{
+		int64_t adjustment, delta;
+	
+		/*
+		 * Adjust MRU size
+		 */
+	
+		adjustment = MIN(arc_size - arc_c,
+		    arc_anon->arcs_size + arc_mru->arcs_size + arc_meta_used - arc_p);
+	
+		if (adjustment > 0 && arc_mru->arcs_lsize[ARC_BUFC_DATA] > 0) {
+			delta = MIN(arc_mru->arcs_lsize[ARC_BUFC_DATA], adjustment);
+			(void) arc_evict(arc_mru, 0, delta, FALSE, ARC_BUFC_DATA);
+			adjustment -= delta;
+		}
+	
+		if (adjustment > 0 && arc_mru->arcs_lsize[ARC_BUFC_METADATA] > 0) {
+			delta = MIN(arc_mru->arcs_lsize[ARC_BUFC_METADATA], adjustment);
+			(void) arc_evict(arc_mru, 0, delta, FALSE,
+			    ARC_BUFC_METADATA);
+		}
+	
+		/*
+		 * Adjust MFU size
+		 */
+	
+		adjustment = arc_size - arc_c;
+	
+		if (adjustment > 0 && arc_mfu->arcs_lsize[ARC_BUFC_DATA] > 0) {
+			delta = MIN(adjustment, arc_mfu->arcs_lsize[ARC_BUFC_DATA]);
+			(void) arc_evict(arc_mfu, 0, delta, FALSE, ARC_BUFC_DATA);
+			adjustment -= delta;
+		}
+	
+		if (adjustment > 0 && arc_mfu->arcs_lsize[ARC_BUFC_METADATA] > 0) {
+			int64_t delta = MIN(adjustment,
+			    arc_mfu->arcs_lsize[ARC_BUFC_METADATA]);
+			(void) arc_evict(arc_mfu, 0, delta, FALSE,
+			    ARC_BUFC_METADATA);
+		}
+	
+		/*
+		 * Adjust ghost lists
+		 */
+	
+		adjustment = arc_mru->arcs_size + arc_mru_ghost->arcs_size - arc_c;
+	
+		if (adjustment > 0 && arc_mru_ghost->arcs_size > 0) {
+			delta = MIN(arc_mru_ghost->arcs_size, adjustment);
+			arc_evict_ghost(arc_mru_ghost, 0, delta);
+		}
+	
+		adjustment =
+		    arc_mru_ghost->arcs_size + arc_mfu_ghost->arcs_size - arc_c;
+	
+		if (adjustment > 0 && arc_mfu_ghost->arcs_size > 0) {
+			delta = MIN(arc_mfu_ghost->arcs_size, adjustment);
+			arc_evict_ghost(arc_mfu_ghost, 0, delta);
+		}
+	}	
+
+```
 
 ### arc_shrink() reduces the ARC Target Size
 
@@ -581,3 +659,4 @@ This blog entry contains edits based on the following sources, credits should go
 * https://www.illumos.org/issues/5497
 * http://m.blog.chinaunix.net/uid-24395800-id-4225348.html
 * http://www.cuddletech.com/blog/pivot/entry.php?id=979
+* https://www.joyent.com/blog/what-s-in-the-arc
