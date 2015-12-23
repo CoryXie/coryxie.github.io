@@ -17,9 +17,144 @@ The ARC achieves a high cache hit rate by using multiple cache algorithms at the
 
 ## ARC Data Structures
 
-The data structures used to maintain the ARC are `arc_buf_hdr_t` and `arc_buf_t`. These data structures are used to determine if a buffer is in ARC, and, if so, where (`mru`, `mfu`, `mru ghost`, `mfu ghost`, `l2arc`). (The ghost lists are used to determine when a `mru` or `mfu` cache is too small). But they do not identify what object the data/metadata holds. For this, the `dmu_buf_impl_t` structure (hereafter referred to as "`dbuf`" structures) can be used. Note that not everything in the ARC is mapped by `dbufs`.
+Data exists in the ARC cache as buffers. The data structures used to maintain the ARC are `arc_buf_hdr_t` and `arc_buf_t`. These data structures are used to determine if a buffer is in ARC, and, if so, where it is (`mru`, `mfu`, `mru ghost`, `mfu ghost`, `l2arc`). (The `ghost`b lists are used to determine when a `mru` or `mfu` cache is too small). But they do not identify what object the data/metadata holds. For this, the `dmu_buf_impl_t` structure (hereafter referred to as "`dbuf`" structures) can be used. Note that not everything in the ARC is mapped by `dbufs`.
 
+The `arc_buf_hdr_t` is defined to be `struct arc_buf_hdr` in `zfs-fuse/src/lib/libzpool/arc.c` as below:
 
+```c
+
+	struct arc_buf_hdr {
+		/* protected by hash lock */
+		dva_t			b_dva;
+		uint64_t		b_birth;
+		uint64_t		b_cksum0;
+	
+		kmutex_t		b_freeze_lock;
+		zio_cksum_t		*b_freeze_cksum;
+	
+		arc_buf_hdr_t		*b_hash_next;
+		arc_buf_t		*b_buf;
+		uint32_t		b_flags;
+		uint32_t		b_datacnt;
+	
+		arc_callback_t		*b_acb;
+		kcondvar_t		b_cv;
+	
+		/* immutable */
+		arc_buf_contents_t	b_type;
+		uint64_t		b_size;
+		uint64_t		b_spa;
+	
+		/* protected by arc state mutex */
+		arc_state_t		*b_state;
+		list_node_t		b_arc_node;
+	
+		/* updated atomically */
+		clock_t			b_arc_access;
+	
+		/* self protecting */
+		refcount_t		b_refcnt;
+	
+		l2arc_buf_hdr_t		*b_l2hdr;
+		list_node_t		b_l2node;
+	};
+
+```
+
+* In the code, `dva_t` is meant for 128-bit ZFS `Data Virtual Address (DVA)`, which is further defined to be the following structure in `zfs-fuse/src/lib/libzfscommon/include/sys/spa.h`:
+
+```c
+
+	/*
+	 * All SPA data is represented by 128-bit data virtual addresses (DVAs).
+	 * The members of the dva_t should be considered opaque outside the SPA.
+	 */
+	typedef struct dva {
+		uint64_t	dva_word[2];
+	} dva_t;
+
+```
+
+* When you see `spa_t`, it means `Storage Pool Allocator (SPA)`, which is defined to be a structure (not to be detailed here). But when you see something like `uint64_t spa`, it means the `guid` of the `spa_t` (obtained by `guid = spa_guid(spa)`).
+
+* The `b_birth` filed in `arc_buf_hdr_t` is the filled by code such as `hdr->b_birth = BP_PHYSICAL_BIRTH(bp)` when the buffer header enters the cache, either during `arc_read_nolock()` or `arc_write_done()` completes the actual IO to read or write data. 
+
+* The `b_buf` is actually starting a list of `struct arc_buf`. That is, `arc_buf_hdr_t` is actually the holding data structure of a list of buffers represented by `struct arc_buf`. Each `struct arc_buf` in that list has a back pinter `b_hdr` that points to the holding `arc_buf_hdr_t`.
+
+```c
+
+	struct arc_buf {
+		arc_buf_hdr_t		*b_hdr;
+		arc_buf_t		*b_next;
+		krwlock_t		b_lock;
+		void			*b_data;
+		arc_evict_func_t	*b_efunc;
+		void			*b_private;
+	};
+
+```
+
+* Access to these data structures is protected by a hash table `buf_hash_table` based on the 128-bit ZFS `data virtual address (DVA)`. The hash table has 256 buffer locks (`BUF_LOCKS`), each is a padded lock `ht_lock` (to avoid false sharing). The `ht_table` is initialized in `buf_init()` to be an array of pointers which can point to all available physical memory blocks (each block is 64KB in size). According to the comments in `buf_init()`, each 1GB of physical memory would require 128KB of `ht_table` memory. Note the `buf_hash_table` is a global variable as a single instance of `struct buf_hash_table`. 
+
+```c
+
+	/*
+	 * Hash table routines
+	 */
+	
+	#define	HT_LOCK_PAD	64
+	
+	struct ht_lock {
+		kmutex_t	ht_lock;
+	#ifdef _KERNEL
+		unsigned char	pad[(HT_LOCK_PAD - sizeof (kmutex_t))];
+	#endif
+	};
+	
+	#define	BUF_LOCKS 256
+	typedef struct buf_hash_table {
+		uint64_t ht_mask;
+		arc_buf_hdr_t **ht_table;
+		struct ht_lock ht_locks[BUF_LOCKS];
+	} buf_hash_table_t;
+	
+	static buf_hash_table_t buf_hash_table;
+
+```
+
+* The `b_state` is the pointer to a `arc_state_t` that is one of the variables in `ARC_anon`, `ARC_mru`, `ARC_mru_ghost`, `ARC_mfu`, `ARC_mfu_ghost`, and `ARC_l2c_only`. Each of `arc_state_t` actually contains two lists in `arcs_list[]`, indexed by `ARC_BUFC_DATA` or `ARC_BUFC_METADATA`, representing data or meta buffers of these different cache states. The `arc_buf_hdr_t` instances are added to the list when a buffer changes state, by calling `arc_change_state()`.
+
+```c
+	
+	typedef enum arc_buf_contents {
+		ARC_BUFC_DATA,				/* buffer contains data */
+		ARC_BUFC_METADATA,			/* buffer contains metadata */
+		ARC_BUFC_NUMTYPES
+	} arc_buf_contents_t;
+
+	typedef struct arc_state {
+	        list_t  arcs_list[ARC_BUFC_NUMTYPES];   /* list of evictable buffers */
+	        uint64_t arcs_lsize[ARC_BUFC_NUMTYPES]; /* amount of evictable data */
+	        uint64_t arcs_size;     /* total amount of data in this state */
+	        kmutex_t arcs_mtx;
+	} arc_state_t;
+	
+	/* The 6 states: */
+	static arc_state_t ARC_anon;
+	static arc_state_t ARC_mru;
+	static arc_state_t ARC_mru_ghost;
+	static arc_state_t ARC_mfu;
+	static arc_state_t ARC_mfu_ghost;
+	static arc_state_t ARC_l2c_only;
+
+	static arc_state_t	*arc_anon;
+	static arc_state_t	*arc_mru;
+	static arc_state_t	*arc_mru_ghost;
+	static arc_state_t	*arc_mfu;
+	static arc_state_t	*arc_mfu_ghost;
+	static arc_state_t	*arc_l2c_only;
+
+```
 
 ## ARC Initialization
 
@@ -194,6 +329,50 @@ The ARC Initialization is performed by calling `arc_init()`. It initializes the 
 The following is the detailed flowchart.
 
 <img src="{{ site.baseurl }}/images/2015-12-14-1/ControlFlowGraph-arc_init.png" alt="ZFS-FUSE Control Flow Graph arc_init">
+
+## ARC Buffer Initialization
+
+```c
+
+	static void buf_init(void)
+	{
+		uint64_t *ct;
+		uint64_t hsize = 1ULL << 12;
+		int i, j;
+	
+		/*
+		 * The hash table is big enough to fill all of physical memory
+		 * with an average 64K block size.  The table will take up
+		 * totalmem*sizeof(void*)/64K (eg. 128KB/GB with 8-byte pointers).
+		 */
+		while (hsize * 65536 < physmem * PAGESIZE)
+			hsize <<= 1;
+	retry:
+		buf_hash_table.ht_mask = hsize - 1;
+		buf_hash_table.ht_table =
+		    kmem_zalloc(hsize * sizeof (void*), KM_NOSLEEP);
+		if (buf_hash_table.ht_table == NULL) {
+			ASSERT(hsize > (1ULL << 8));
+			hsize >>= 1;
+			goto retry;
+		}
+	
+		hdr_cache = kmem_cache_create("arc_buf_hdr_t", sizeof (arc_buf_hdr_t),
+		    0, hdr_cons, hdr_dest, hdr_recl, NULL, NULL, 0);
+		buf_cache = kmem_cache_create("arc_buf_t", sizeof (arc_buf_t),
+		    0, buf_cons, buf_dest, NULL, NULL, NULL, 0);
+	
+		for (i = 0; i < 256; i++)
+			for (ct = zfs_crc64_table + i, *ct = i, j = 8; j > 0; j--)
+				*ct = (*ct >> 1) ^ (-(*ct & 1) & ZFS_CRC64_POLY);
+	
+		for (i = 0; i < BUF_LOCKS; i++) {
+			mutex_init(&buf_hash_table.ht_locks[i].ht_lock,
+			    NULL, MUTEX_DEFAULT, NULL);
+		}
+	}
+
+```
 
 ## ARC Exit
 
