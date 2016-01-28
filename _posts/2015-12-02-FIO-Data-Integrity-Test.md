@@ -3,7 +3,7 @@ layout: post
 title: "FIO Data Integrity Test"
 description: 
 headline: 
-modified: 2015-12-01
+modified: 2015-12-02
 category: FileSysDev
 tags: [Filesystem]
 imagefeature: 
@@ -139,9 +139,15 @@ This should be sufficient for data retention testing as well: If you write with 
 
 * Work on any block storage device (ie no knowledge of specific device geometry or flash vs magnetic vs optical or removable vs built-in - some 'workloads' might be geared for specific types of storage).
 
+The original `fio` should have matched this requirement.
+
 * Specify workload the same way `fio` does (multi-threaded, async, random vs seq, read vs write mix, etc).
 
+The original `fio` should have matched this requirement.
+
 * Collect same performance statistics that fio does (latency histograms in particular).
+
+The original `fio` should have matched this requirement.
 
 Since these are destructive tests, we can expect the primary target "audience" is anyone working on Storage HW or wants to confirm Storage HW is operating correctly before deploying $$$ worth of HW.
 
@@ -207,7 +213,7 @@ Note: `fio` needs to be run based on time if we want `numberio` incremented when
 
 # References
 
-This blog entry is mostly an edit of the following sources, credits should go to these authors!
+This blog entry is mostly an edit based on the following sources, credits should go to these authors!
 
 * http://www.spinics.net/lists/fio/msg02256.html
 * http://www.spinics.net/lists/fio/msg02341.html
