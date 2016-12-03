@@ -1,4 +1,4 @@
-# www.coderplay.org
+# www.coderplay.xyz
 
 ## A Jekyll based static blog site with Notepad theme.
 
