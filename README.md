@@ -1,4 +1,4 @@
-# www.coderplay.xyz
+# Cory Xie Blogging
 
 ## A Jekyll based static blog site with Notepad theme.
 
